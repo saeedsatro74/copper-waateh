@@ -188,13 +188,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const lastLocalMutationTime = useRef<number>(0);
   const cloudSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load previously authenticated user session if valid, otherwise require login
+  // Load previously authenticated user session if valid, otherwise require login (strictly from sessionStorage!)
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const savedSession =
-          sessionStorage.getItem('COPPER_AUTH_USER_V1') ||
-          localStorage.getItem('COPPER_AUTH_USER_V1');
+        const savedSession = sessionStorage.getItem('COPPER_AUTH_USER_V1');
         if (savedSession) {
           const parsed = JSON.parse(savedSession);
           if (parsed && parsed.id && parsed.username) {
@@ -237,6 +235,40 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         console.warn('SessionStorage save error:', e);
       }
     }
+  }, [currentUser]);
+
+  // 10-minute Inactivity Auto-logout
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      // 10 minutes = 10 * 60 * 1000 = 600,000 ms
+      timeoutId = setTimeout(() => {
+        logout();
+        showToast('شما به دلیل ۱۰ دقیقه عدم فعالیت، به صورت خودکار از سیستم خارج شدید.', 'info');
+      }, 600000);
+    };
+
+    // Set initial timer
+    resetTimer();
+
+    // Listen to user activities to reset timer
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
   }, [currentUser]);
 
   // Helper to commit state changes with undo history and immediate local & cloud persistence
@@ -709,7 +741,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let addedWeight = 0;
     let addedCount = 1;
     let title = '';
-    const purchaserName = purchaser || data.purchaser || 'حساب مشترک (۵۰-۵۰)';
+    const purchaserName = purchaser || data.purchaser || 'حساب مشترک';
 
     if (type === 'pallet') {
       const pallet: PalletItem = {
@@ -1350,6 +1382,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // Process Pallets that have subItems or whole removals
     const remainingPallets: PalletItem[] = [];
+    const newStandaloneFromPallets: StandaloneReelItem[] = [];
 
     updatedPallets.forEach((pallet) => {
       if (wholePalletIds.has(pallet.id)) {
@@ -1359,19 +1392,28 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const removedSubItemIds = new Set(palletSubItemsMap.get(pallet.id));
         const remainingReels = pallet.reels.filter((r) => !removedSubItemIds.has(r.id));
         
-        // If some reels remain, keep the pallet with remaining reels intact!
-        if (remainingReels.length > 0) {
-          remainingPallets.push({
-            ...pallet,
-            reels: remainingReels,
+        // Unpack all remaining reels into standalone reels!
+        remainingReels.forEach((r, idx) => {
+          newStandaloneFromPallets.push({
+            id: `srel-csg-unp-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+            reelCode: r.serialNo,
+            brand: pallet.brand,
+            thickness: pallet.thickness,
+            diameter: pallet.diameter,
+            weightKg: r.weightKg,
+            originPalletCode: pallet.palletCode,
+            entryDate: getPersianDateString(),
+            location: pallet.location,
+            notes: `باقیمانده از پالت ${pallet.palletCode} پس از انتقال قرقره به امانی`,
           });
-        }
+        });
         return;
       }
       remainingPallets.push(pallet);
     });
 
     updatedPallets = remainingPallets;
+    updatedReels = [...updatedReels, ...newStandaloneFromPallets];
 
     const totalWeight = items.reduce((acc, i) => acc + i.weightKg, 0);
 
@@ -1649,14 +1691,14 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     amount: number,
     notes?: string
   ) => {
-    const p1Name = state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول (مدیر ۱)';
-    const p2Name = state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم (مدیر ۲)';
+    const p1Name = state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول';
+    const p2Name = state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم';
     const accountName =
       targetAccount === 'partner1'
         ? p1Name
         : targetAccount === 'partner2'
         ? p2Name
-        : 'حساب مشترک انبار (۵۰-۵۰)';
+        : 'حساب مشترک انبار';
 
     const currentPartnerInfo: PartnerInfo = state.warehouseProfile.partnerInfo || {
       partner1Name: p1Name,
@@ -1875,6 +1917,22 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     setSelectedItems((prev) => prev.filter((it) => it.id !== id));
 
+    // Explicitly delete from Supabase table if configured to prevent phantom records
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      const client = getSupabaseClient();
+      if (client) {
+        const tableName = category === 'pallet' ? 'pallets' 
+                        : category === 'reel' ? 'reels' 
+                        : category === 'coil' ? 'coils' 
+                        : category === 'branch' ? 'branches' 
+                        : 'loose_items';
+        client.from(tableName).delete().eq('id', id).then(({ error }) => {
+          if (error) console.warn(`Failed to delete item ${id} from Supabase table ${tableName}:`, error);
+        });
+      }
+    }
+
     updatePresentState({
       ...state,
       pallets: newPallets,
@@ -1903,6 +1961,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const deleteInvoice = (invoiceId: string) => {
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      const client = getSupabaseClient();
+      if (client) {
+        client.from('invoices').delete().eq('id', invoiceId).then(({ error }) => {
+          if (error) console.warn('Failed to delete invoice from Supabase:', error);
+        });
+      }
+    }
+
     updatePresentState({
       ...state,
       invoices: state.invoices.filter((inv) => inv.id !== invoiceId),
@@ -1911,6 +1979,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const deleteTransaction = (transactionId: string) => {
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      const client = getSupabaseClient();
+      if (client) {
+        client.from('transactions').delete().eq('id', transactionId).then(({ error }) => {
+          if (error) console.warn('Failed to delete transaction from Supabase:', error);
+        });
+      }
+    }
+
     updatePresentState({
       ...state,
       transactions: state.transactions.filter((tx) => tx.id !== transactionId),
@@ -2069,6 +2147,17 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       timestamp: getPersianDateTimeString(),
       details: `رکورد امانی کد ${csg.code} مربوط به ${csg.recipientName} به وزن ${csg.weightKg} کیلوگرم از سیستم حذف شد.${returnToStock ? ' (موجودی کالا به انبار بازگردانده شد)' : ''}`,
     };
+
+    // Explicitly delete from Supabase table if configured to prevent phantom records
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      const client = getSupabaseClient();
+      if (client) {
+        client.from('consignments').delete().eq('id', consignmentId).then(({ error }) => {
+          if (error) console.warn('Failed to delete consignment from Supabase table:', error);
+        });
+      }
+    }
 
     updatePresentState({
       ...state,

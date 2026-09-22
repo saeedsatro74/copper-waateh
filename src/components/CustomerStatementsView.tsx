@@ -30,8 +30,8 @@ export const CustomerStatementsView: React.FC<CustomerStatementsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
 
-  const p1Name = state.warehouseProfile.partnerInfo?.partner1Name || 'ادمین ۱';
-  const p2Name = state.warehouseProfile.partnerInfo?.partner2Name || 'ادمین ۲';
+  const p1Name = state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول';
+  const p2Name = state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم';
 
   // Group invoices by customer
   const customerMap: Record<
@@ -117,31 +117,31 @@ export const CustomerStatementsView: React.FC<CustomerStatementsViewProps> = ({
       const pWeight = p.reels.reduce((s, r) => s + r.weightKg, 0);
       if (p.purchaser === p1Name && isP1) weight += pWeight;
       else if (p.purchaser === p2Name && isP2) weight += pWeight;
-      else if ((!p.purchaser || p.purchaser === 'حساب مشترک (۵۰-۵۰)') && !isP1 && !isP2) weight += pWeight;
+      else if ((!p.purchaser || p.purchaser === 'حساب مشترک' || p.purchaser === 'حساب مشترک (۵۰-۵۰)' || p.purchaser.includes('مشترک')) && !isP1 && !isP2) weight += pWeight;
     });
 
     state.reels.forEach((r) => {
       if (r.purchaser === p1Name && isP1) weight += r.weightKg;
       else if (r.purchaser === p2Name && isP2) weight += r.weightKg;
-      else if ((!r.purchaser || r.purchaser === 'حساب مشترک (۵۰-۵۰)') && !isP1 && !isP2) weight += r.weightKg;
+      else if ((!r.purchaser || r.purchaser === 'حساب مشترک' || r.purchaser === 'حساب مشترک (۵۰-۵۰)' || r.purchaser.includes('مشترک')) && !isP1 && !isP2) weight += r.weightKg;
     });
 
     state.coils.forEach((c) => {
       if (c.purchaser === p1Name && isP1) weight += c.weightKg;
       else if (c.purchaser === p2Name && isP2) weight += c.weightKg;
-      else if ((!c.purchaser || c.purchaser === 'حساب مشترک (۵۰-۵۰)') && !isP1 && !isP2) weight += c.weightKg;
+      else if ((!c.purchaser || c.purchaser === 'حساب مشترک' || c.purchaser === 'حساب مشترک (۵۰-۵۰)' || c.purchaser.includes('مشترک')) && !isP1 && !isP2) weight += c.weightKg;
     });
 
     state.branches.forEach((b) => {
       if (b.purchaser === p1Name && isP1) weight += b.totalWeightKg;
       else if (b.purchaser === p2Name && isP2) weight += b.totalWeightKg;
-      else if ((!b.purchaser || b.purchaser === 'حساب مشترک (۵۰-۵۰)') && !isP1 && !isP2) weight += b.totalWeightKg;
+      else if ((!b.purchaser || b.purchaser === 'حساب مشترک' || b.purchaser === 'حساب مشترک (۵۰-۵۰)' || b.purchaser.includes('مشترک')) && !isP1 && !isP2) weight += b.totalWeightKg;
     });
 
     state.loose.forEach((l) => {
       if (l.purchaser === p1Name && isP1) weight += l.weightKg;
       else if (l.purchaser === p2Name && isP2) weight += l.weightKg;
-      else if ((!l.purchaser || l.purchaser === 'حساب مشترک (۵۰-۵۰)') && !isP1 && !isP2) weight += l.weightKg;
+      else if ((!l.purchaser || l.purchaser === 'حساب مشترک' || l.purchaser === 'حساب مشترک (۵۰-۵۰)' || l.purchaser.includes('مشترک')) && !isP1 && !isP2) weight += l.weightKg;
     });
 
     return weight;
@@ -149,7 +149,7 @@ export const CustomerStatementsView: React.FC<CustomerStatementsViewProps> = ({
 
   p1CopperKg = (p1Account?.initialCopperKg || 0) + calculateStockWeightByPurchaser(p1Name);
   p2CopperKg = (p2Account?.initialCopperKg || 0) + calculateStockWeightByPurchaser(p2Name);
-  sharedCopperKg = (sharedAccount?.initialCopperKg || 0) + calculateStockWeightByPurchaser('حساب مشترک (۵۰-۵۰)');
+  sharedCopperKg = (sharedAccount?.initialCopperKg || 0) + calculateStockWeightByPurchaser('حساب مشترک');
 
   return (
     <div className="space-y-4 sm:space-y-6 pb-16">

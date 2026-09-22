@@ -13,7 +13,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
-import { formatKg, formatToman, formatPersianNumber } from '../utils/persian';
+import { formatKg, formatToman, formatPersianNumber, getDateTimeStringFromId } from '../utils/persian';
 
 export const TransactionsView: React.FC = () => {
   const { state } = useInventory();
@@ -34,6 +34,14 @@ export const TransactionsView: React.FC = () => {
       (tx.invoiceNumber && tx.invoiceNumber.includes(searchQuery.trim()));
 
     return matchesType && matchesUser && matchesSearch;
+  });
+
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    const matchA = a.id.match(/\d+/);
+    const matchB = b.id.match(/\d+/);
+    const timeA = matchA ? parseInt(matchA[0], 10) : 0;
+    const timeB = matchB ? parseInt(matchB[0], 10) : 0;
+    return timeB - timeA;
   });
 
   return (
@@ -114,13 +122,13 @@ export const TransactionsView: React.FC = () => {
 
       {/* Transactions List */}
       <div className="space-y-3">
-        {transactions.length === 0 ? (
+        {sortedTransactions.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
             <History className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="font-bold text-sm">هیچ تراکنشی مطابق فیلتر یافت نشد.</p>
           </div>
         ) : (
-          transactions.map((tx) => {
+          sortedTransactions.map((tx) => {
             const isEntry = tx.type === 'entry';
             const isExit = tx.type === 'exit';
             const isPalletUnpack = tx.type === 'pallet_unpack';
@@ -209,8 +217,8 @@ export const TransactionsView: React.FC = () => {
                       <User className="w-3.5 h-3.5 text-amber-600" />
                       <span>ثبت توسط: {tx.registeredBy}</span>
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      زمان: {tx.timestamp}
+                    <div className="text-[10px] text-slate-500 font-bold mt-0.5">
+                      زمان: {tx.timestamp || getDateTimeStringFromId(tx.id)}
                     </div>
                   </div>
                 </div>

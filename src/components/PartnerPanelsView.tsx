@@ -33,7 +33,7 @@ interface PartnerPanelsViewProps {
 export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvoice }) => {
   const { state } = useInventory();
 
-  const [activePanel, setActivePanel] = useState<'partner1' | 'partner2' | 'shared' | 'comparison'>('partner1');
+  const [activePanel, setActivePanel] = useState<'partner1' | 'partner2' | 'shared'>('partner1');
   const [panelSubTab, setPanelSubTab] = useState<'adjustments' | 'stock' | 'invoices' | 'entries'>('adjustments');
 
   // Modal State
@@ -65,7 +65,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
 
   // Helper calculations for each partner/account:
   const getAccountData = (acc: 'partner1' | 'partner2' | 'shared') => {
-    const accName = acc === 'partner1' ? p1Name : acc === 'partner2' ? p2Name : 'حساب مشترک (۵۰-۵۰)';
+    const accName = acc === 'partner1' ? p1Name : acc === 'partner2' ? p2Name : 'حساب مشترک';
     const storedData =
       acc === 'partner1'
         ? partnerInfo?.partner1Account
@@ -107,7 +107,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
     const isMatch = (purchaser?: string) => {
       if (acc === 'partner1') return purchaser === p1Name;
       if (acc === 'partner2') return purchaser === p2Name;
-      return !purchaser || purchaser === 'حساب مشترک (۵۰-۵۰)' || purchaser.includes('مشترک');
+      return !purchaser || purchaser === 'حساب مشترک' || purchaser.includes('مشترک');
     };
 
     state.pallets.forEach((p) => {
@@ -147,14 +147,26 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
     });
 
     // Entry purchases recorded for this purchaser
-    const entryTransactions = state.transactions.filter(
-      (tx) => tx.type === 'entry' && isMatch(tx.purchaser)
-    );
+    const entryTransactions = state.transactions
+      .filter((tx) => tx.type === 'entry' && isMatch(tx.purchaser))
+      .sort((a, b) => {
+        const matchA = a.id.match(/\d+/);
+        const matchB = b.id.match(/\d+/);
+        const timeA = matchA ? parseInt(matchA[0], 10) : 0;
+        const timeB = matchB ? parseInt(matchB[0], 10) : 0;
+        return timeB - timeA;
+      });
 
     // Adjustments history
-    const adjustments = (state.balanceAdjustments || []).filter(
-      (adj) => adj.targetAccount === acc
-    );
+    const adjustments = (state.balanceAdjustments || [])
+      .filter((adj) => adj.targetAccount === acc)
+      .sort((a, b) => {
+        const matchA = a.id.match(/\d+/);
+        const matchB = b.id.match(/\d+/);
+        const timeA = matchA ? parseInt(matchA[0], 10) : 0;
+        const timeB = matchB ? parseInt(matchB[0], 10) : 0;
+        return timeB - timeA;
+      });
 
     const totalCash = initialCash + invoiceCash;
     const totalCopperKg = initialCopperKg + stockCopperKg;
@@ -208,7 +220,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
           </div>
           <div className="min-w-0">
             <h2 className="text-sm sm:text-lg font-black text-slate-900 truncate">
-              پنل‌های ادمین ۱، ادمین ۲ و حساب مشترک
+              پنل‌های کاربران و حساب مشترک
             </h2>
             <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1">
               مدیریت مستقل موجودی نقدی، سرمایه، سهم واریزی‌های فاکتور و کاردکس هر حساب
@@ -218,7 +230,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
 
         <div className="flex items-center space-x-2 space-x-reverse w-full sm:w-auto">
           <button
-            onClick={() => openAdjustModal(activePanel === 'comparison' ? 'partner1' : activePanel)}
+            onClick={() => openAdjustModal(activePanel)}
             className="flex-1 sm:flex-none flex items-center justify-center space-x-1.5 space-x-reverse px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs cursor-pointer transition-all"
           >
             <PlusCircle className="w-4 h-4" />
@@ -305,8 +317,8 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
         </div>
       </div>
 
-      {/* 3 Main Panels Selector Tabs + Comparison Tab */}
-      <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+      {/* 3 Main Panels Selector Tabs */}
+      <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
         <button
           onClick={() => setActivePanel('partner1')}
           className={`py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -316,7 +328,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
           }`}
         >
           <User className="w-4 h-4 text-amber-600" />
-          <span className="truncate">پنل {p1Name} (ادمین ۱)</span>
+          <span className="truncate">پنل {p1Name}</span>
         </button>
 
         <button
@@ -328,7 +340,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
           }`}
         >
           <User className="w-4 h-4 text-amber-600" />
-          <span className="truncate">پنل {p2Name} (ادمین ۲)</span>
+          <span className="truncate">پنل {p2Name}</span>
         </button>
 
         <button
@@ -340,99 +352,9 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
           }`}
         >
           <Building2 className="w-4 h-4 text-amber-600" />
-          <span className="truncate">پنل حساب مشترک (۵۰-۵۰)</span>
-        </button>
-
-        <button
-          onClick={() => setActivePanel('comparison')}
-          className={`py-2.5 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-            activePanel === 'comparison'
-              ? 'bg-amber-600 text-white shadow-sm'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-          }`}
-        >
-          <Scale className="w-4 h-4" />
-          <span>مقایسه هم‌زمان ۳ حساب</span>
+          <span className="truncate">پنل حساب مشترک</span>
         </button>
       </div>
-
-      {/* Comparison View: 3 Panels Side-by-Side */}
-      {activePanel === 'comparison' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in duration-200">
-          {[p1Data, p2Data, sharedData].map((acc, idx) => (
-            <div
-              key={acc.accKey}
-              className={`bg-white rounded-3xl border p-5 shadow-xs flex flex-col justify-between space-y-4 ${
-                idx === 2 ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-                      {idx === 2 ? <Building2 className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 text-sm">{acc.accName}</h3>
-                      <span className="text-[10px] text-slate-400">
-                        {idx === 2 ? 'انبار و صندوق مشترک' : `سهم شراکت ۵۰٪`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => setActivePanel(acc.accKey)}
-                    className="text-[11px] font-bold text-amber-700 hover:text-amber-800 cursor-pointer"
-                  >
-                    مشاهده ریز ➜
-                  </button>
-                </div>
-
-                {/* Account Balances (Cash Only) */}
-                <div className="mt-4 space-y-2.5">
-                  <div className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-700 font-bold flex items-center gap-1.5">
-                        <Wallet className="w-4 h-4 text-amber-600" />
-                        <span>کل موجودی نقدی جاری:</span>
-                      </span>
-                      <span className="font-black text-amber-900 dir-ltr text-right text-base">
-                        {formatToman(acc.totalCash)}
-                      </span>
-                    </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600 pt-2 border-t border-amber-200/80">
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">آورده و خرید بار:</span>
-                        <span className="font-bold text-slate-800">{formatToman(acc.initialCash)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">واریزی فروش فاکتورها:</span>
-                        <span className="font-bold text-slate-800">{formatToman(acc.invoiceCash)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs">
-                    <span className="text-slate-500 font-medium">تعداد فاکتورهای تسویه شده:</span>
-                    <span className="font-bold text-slate-800">{formatPersianNumber(acc.allocatedInvoices.length)} فاکتور</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Action Button for this account */}
-              <div className="pt-2 border-t border-slate-100">
-                <button
-                  onClick={() => openAdjustModal(acc.accKey)}
-                  className="w-full py-2.5 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-black rounded-xl border border-amber-300 cursor-pointer transition-colors text-center flex items-center justify-center gap-1.5"
-                >
-                  <Wallet className="w-4 h-4 text-amber-600" />
-                  <span>ثبت و ویرایش موجودی نقدی</span>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Single Selected Panel Detailed View */}
       {currentActiveData && (

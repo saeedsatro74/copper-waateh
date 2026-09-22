@@ -407,16 +407,16 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
       {/* Selected Items Sticky Floating Action Bar */}
       {selectedItems.length > 0 && (
-        <div className="bg-amber-900 text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-in fade-in slide-in-from-bottom-3 duration-200 border border-amber-700">
+        <div className="bg-slate-900 text-white p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-2.5 animate-in fade-in slide-in-from-bottom-3 duration-200 border border-slate-800">
           <div className="flex items-center space-x-2.5 space-x-reverse">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-amber-800 flex items-center justify-center font-bold text-amber-300 shrink-0">
-              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-slate-300 shrink-0">
+              <CheckSquare className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
             </div>
             <div>
               <span className="font-bold text-xs sm:text-sm block">
                 {formatPersianNumber(selectedItems.length)} مورد انتخاب شده جهت خروج / پیش‌فاکتور
               </span>
-              <span className="text-[11px] sm:text-xs text-amber-200">
+              <span className="text-[11px] sm:text-xs text-slate-400">
                 وزن کل انتخاب شده: {formatKg(selectedItems.reduce((acc, i) => acc + i.weightKg, 0))}
               </span>
             </div>
@@ -425,22 +425,22 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           <div className="flex items-center space-x-2 space-x-reverse w-full sm:w-auto justify-end">
             <button
               onClick={clearSelectedItems}
-              className="px-2.5 py-1.5 rounded-xl bg-amber-800/80 hover:bg-amber-800 text-amber-200 text-xs font-medium transition-all cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
             >
               لغو
             </button>
             <button
               onClick={() => setIsConsignmentModalOpen(true)}
-              className="flex items-center space-x-1.5 space-x-reverse px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs transition-all shadow-md cursor-pointer whitespace-nowrap"
+              className="flex items-center space-x-1.5 space-x-reverse px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 font-black text-xs transition-all shadow-md cursor-pointer whitespace-nowrap"
             >
-              <Handshake className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950" />
-              <span>انتقال به امانی</span>
+              <Handshake className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-800" />
+              <span className="text-slate-900">انتقال به امانی</span>
             </button>
             <button
               onClick={onOpenInvoiceModal}
-              className="flex items-center space-x-1.5 space-x-reverse px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-xs transition-all shadow-md cursor-pointer whitespace-nowrap"
+              className="flex items-center space-x-1.5 space-x-reverse px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-black text-xs transition-all shadow-md cursor-pointer whitespace-nowrap"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
               <span>پیش‌فاکتور خروج</span>
             </button>
           </div>

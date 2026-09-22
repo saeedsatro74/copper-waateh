@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Undo2,
   Redo2,
@@ -20,6 +20,8 @@ import {
   Cloud,
   CloudOff,
   Loader2,
+  Clock,
+  Calendar,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { User } from '../types';
@@ -64,6 +66,37 @@ export const Header: React.FC<HeaderProps> = ({
 
   const totalSelectedWeight = selectedItems.reduce((acc, item) => acc + item.weightKg, 0);
 
+  const [timeStr, setTimeStr] = useState('');
+  const [dateStr, setDateStr] = useState('');
+
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date();
+      
+      // Format time (e.g., 14:23:45)
+      const formattedTime = new Intl.DateTimeFormat('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).format(now);
+
+      // Format date (e.g., سه‌شنبه، ۳۱ شهریور ۱۴۰۵)
+      const formattedDate = new Intl.DateTimeFormat('fa-IR', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+      }).format(now);
+
+      setTimeStr(formattedTime);
+      setDateStr(formattedDate);
+    };
+
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
       {/* Top Banner Bar */}
@@ -83,6 +116,21 @@ export const Header: React.FC<HeaderProps> = ({
               </p>
             </div>
           </div>
+
+          {/* Live Date & Time Indicator */}
+          {timeStr && (
+            <div className="hidden md:flex items-center space-x-2.5 space-x-reverse bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-2xl shrink-0 shadow-2xs">
+              <div className="flex items-center gap-1.5 text-slate-800">
+                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-xs font-black dir-ltr tabular-nums tracking-wide">{timeStr}</span>
+              </div>
+              <div className="w-px h-3 bg-slate-200" />
+              <div className="flex items-center gap-1.5 text-slate-600">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-[10px] font-black">{dateStr}</span>
+              </div>
+            </div>
+          )}
 
           {/* Center Actions: UNDO / REDO System & Realtime Sync Status */}
           <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse bg-slate-100 p-1 sm:p-1.5 rounded-xl border border-slate-200 shrink-0">
@@ -162,9 +210,9 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={onOpenCalculatorModal}
               title="ماشین حساب تخصصی وزن لوله و کلاف مس"
-              className="flex items-center space-x-1 sm:space-x-1.5 space-x-reverse px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-[11px] sm:text-xs font-black transition-all shadow-xs cursor-pointer shrink-0 border border-amber-600/30"
+              className="flex items-center space-x-1 sm:space-x-1.5 space-x-reverse px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] sm:text-xs font-black transition-all shadow-xs cursor-pointer shrink-0 border border-slate-300"
             >
-              <Calculator className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950" />
+              <Calculator className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700" />
               <span className="hidden sm:inline">ماشین حساب</span>
             </button>
 
@@ -297,7 +345,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-600" />
-              <span>پنل شرکا و ۳ حساب</span>
+              <span>پنل کاربران</span>
             </button>
 
             {isManager && (

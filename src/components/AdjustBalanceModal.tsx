@@ -49,15 +49,15 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
   if (!isOpen) return null;
 
   const partnerInfo = state.warehouseProfile.partnerInfo;
-  const p1Name = partnerInfo?.partner1Name || 'شریک اول (مدیر ۱)';
-  const p2Name = partnerInfo?.partner2Name || 'شریک دوم (مدیر ۲)';
+  const p1Name = partnerInfo?.partner1Name || 'شریک اول';
+  const p2Name = partnerInfo?.partner2Name || 'شریک دوم';
 
   const activeAccountName =
     targetAccount === 'partner1'
       ? p1Name
       : targetAccount === 'partner2'
       ? p2Name
-      : 'حساب مشترک انبار (۵۰-۵۰)';
+      : 'حساب مشترک انبار';
 
   const accData =
     targetAccount === 'partner1'
@@ -151,7 +151,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
               >
                 <User className="w-4 h-4 text-amber-600" />
                 <span className="text-xs truncate w-full">{p1Name}</span>
-                <span className="text-[10px] text-slate-500">ادمین ۱ (۵۰٪)</span>
+                <span className="text-[10px] text-slate-500">شریک اول (۵۰٪)</span>
               </button>
 
               <button
@@ -165,7 +165,7 @@ export const AdjustBalanceModal: React.FC<AdjustBalanceModalProps> = ({
               >
                 <User className="w-4 h-4 text-amber-600" />
                 <span className="text-xs truncate w-full">{p2Name}</span>
-                <span className="text-[10px] text-slate-500">ادمین ۲ (۵۰٪)</span>
+                <span className="text-[10px] text-slate-500">شریک دوم (۵۰٪)</span>
               </button>
 
               <button

@@ -68,3 +68,37 @@ export function generateInvoiceNumber(existingCount: number = 0): string {
   const num = (existingCount + 101).toString();
   return `${prefix}${yearStr}-${num}`;
 }
+
+// Extract and format precise date and time from any ID containing millisecond timestamp
+export function getTimeStringFromId(id: string): string {
+  if (!id) return '';
+  const match = id.match(/\d+/);
+  if (!match) return '';
+  const timestamp = parseInt(match[0], 10);
+  if (isNaN(timestamp) || timestamp < 1600000000000) return '';
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+}
+
+export function getDateTimeStringFromId(id: string): string {
+  if (!id) return '';
+  const match = id.match(/\d+/);
+  if (!match) return '';
+  const timestamp = parseInt(match[0], 10);
+  if (isNaN(timestamp) || timestamp < 1600000000000) return '';
+  const date = new Date(timestamp);
+  
+  const datePart = new Intl.DateTimeFormat('fa-IR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+  
+  const timePart = date.toLocaleTimeString('fa-IR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  
+  return `${datePart} - ${timePart}`;
+}

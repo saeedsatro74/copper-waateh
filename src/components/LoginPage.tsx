@@ -7,7 +7,6 @@ export const LoginPage: React.FC = () => {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -20,9 +19,6 @@ export const LoginPage: React.FC = () => {
     setTimeout(() => {
       const user = login(username, password);
       if (user) {
-        if (rememberMe && typeof window !== 'undefined') {
-          localStorage.setItem('COPPER_AUTH_USER_V1', JSON.stringify(user));
-        }
         setIsSubmitting(false);
       } else {
         setIsSubmitting(false);
@@ -110,17 +106,7 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 border-slate-300"
-                />
-                <span className="text-xs font-bold text-slate-600">مرا به خاطر بسپار</span>
-              </label>
-            </div>
+
 
             <button
               type="submit"

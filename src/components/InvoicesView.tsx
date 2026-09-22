@@ -17,7 +17,7 @@ import {
 import { useInventory } from '../context/InventoryContext';
 import { PaymentAllocationModal } from './PaymentAllocationModal';
 import { PaymentAllocation, Invoice } from '../types';
-import { formatKg, formatToman, formatPersianNumber } from '../utils/persian';
+import { formatKg, formatToman, formatPersianNumber, getTimeStringFromId } from '../utils/persian';
 
 interface InvoicesViewProps {
   onViewInvoice: (invoice: Invoice) => void;
@@ -49,6 +49,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
       (inv.customerPhone && inv.customerPhone.includes(searchQuery.trim()));
 
     return matchesSearch;
+  });
+
+  const sortedInvoices = [...invoices].sort((a, b) => {
+    const matchA = a.id.match(/\d+/);
+    const matchB = b.id.match(/\d+/);
+    const timeA = matchA ? parseInt(matchA[0], 10) : 0;
+    const timeB = matchB ? parseInt(matchB[0], 10) : 0;
+    return timeB - timeA;
   });
 
   return (
@@ -102,7 +110,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
 
       {/* Invoices List Table */}
       <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        {invoices.length === 0 ? (
+        {sortedInvoices.length === 0 ? (
           <div className="p-8 sm:p-12 text-center text-slate-500">
             <FileText className="w-10 h-10 sm:w-12 sm:h-12 text-slate-300 mx-auto mb-2" />
             <p className="font-bold text-xs sm:text-sm">هیچ پیش‌فاکتوری ثبت نشده است.</p>
@@ -112,7 +120,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {invoices.map((inv) => (
+            {sortedInvoices.map((inv) => (
               <div
                 key={inv.id}
                 className="p-3.5 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 hover:bg-slate-50/60 transition-colors"
@@ -140,7 +148,9 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
                       </span>
                     )}
 
-                    <span className="text-[10px] sm:text-xs text-slate-500 font-medium">تاریخ: {inv.officialDate || inv.date}</span>
+                    <span className="text-[10px] sm:text-xs text-slate-500 font-bold">
+                      تاریخ: {inv.officialDate || inv.date} - ساعت: {getTimeStringFromId(inv.id) || '---'}
+                    </span>
                   </div>
 
                   <p className="text-xs font-bold text-slate-800">

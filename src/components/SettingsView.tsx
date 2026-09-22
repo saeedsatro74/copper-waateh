@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -56,6 +56,13 @@ export const SettingsView: React.FC = () => {
   // Warehouse Profile Form State
   const [profile, setProfile] = useState<WarehouseProfile>(state.warehouseProfile);
   const [profileSuccessMsg, setProfileSuccessMsg] = useState(false);
+  const [isProfileDirty, setIsProfileDirty] = useState(false);
+
+  useEffect(() => {
+    if (!isProfileDirty) {
+      setProfile(state.warehouseProfile);
+    }
+  }, [state.warehouseProfile, isProfileDirty]);
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +87,7 @@ export const SettingsView: React.FC = () => {
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
     updateWarehouseProfile(profile);
+    setIsProfileDirty(false);
     setProfileSuccessMsg(true);
     setTimeout(() => setProfileSuccessMsg(false), 3000);
   };
@@ -260,7 +268,7 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSaveProfile} className="space-y-4">
+        <form onSubmit={handleSaveProfile} onChange={() => setIsProfileDirty(true)} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -330,7 +338,8 @@ export const SettingsView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={profile.partnerInfo?.partner1Name || 'شریک اول (خودم)'}
+                  value={profile.partnerInfo?.partner1Name ?? ''}
+                  placeholder="شریک اول (خودم)"
                   onChange={(e) =>
                     setProfile({
                       ...profile,
@@ -355,7 +364,8 @@ export const SettingsView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={profile.partnerInfo?.partner2Name || 'شریک دوم (همکار)'}
+                  value={profile.partnerInfo?.partner2Name ?? ''}
+                  placeholder="شریک دوم (همکار)"
                   onChange={(e) =>
                     setProfile({
                       ...profile,

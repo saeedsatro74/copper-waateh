@@ -28,8 +28,8 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
   const { state } = useInventory();
 
   const partnerInfo = state.warehouseProfile.partnerInfo || {
-    partner1Name: 'شریک اول (ادمین ۱)',
-    partner2Name: 'شریک دوم (ادمین ۲)',
+    partner1Name: 'شریک اول',
+    partner2Name: 'شریک دوم',
     partner1SharePercent: 50,
     partner2SharePercent: 50,
   };
@@ -188,32 +188,25 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
             <label className="block text-xs font-bold text-slate-800 mb-1.5">
               میانبرهای تقسیم سریع واریزی:
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] font-bold">
-              <button
-                type="button"
-                onClick={() => handlePresetAllocation('split_50_50')}
-                className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer"
-              >
-                ۵۰٪ ادمین ۱ - ۵۰٪ ادمین ۲
-              </button>
+            <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
               <button
                 type="button"
                 onClick={() => handlePresetAllocation('shared')}
-                className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer"
+                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs"
               >
                 تماماً حساب مشترک
               </button>
               <button
                 type="button"
                 onClick={() => handlePresetAllocation('partner1')}
-                className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer truncate"
+                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs truncate"
               >
                 تماماً {partnerInfo.partner1Name}
               </button>
               <button
                 type="button"
                 onClick={() => handlePresetAllocation('partner2')}
-                className="p-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer truncate"
+                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs truncate"
               >
                 تماماً {partnerInfo.partner2Name}
               </button>
@@ -330,7 +323,7 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="مثلا: واریز نقدی ۵۰ میلیون به ادمین ۱ و مابقی به ادمین ۲"
+              placeholder="مثلا: واریز نقدی ۵۰ میلیون به شریک اول و مابقی به شریک دوم"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
           </div>

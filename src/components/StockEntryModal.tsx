@@ -61,12 +61,12 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
   const [pricePerKg, setPricePerKg] = useState<number>(680000);
   const [notes, setNotes] = useState('');
   const [purchaser, setPurchaser] = useState<string>(
-    state.warehouseProfile.partnerInfo?.partner1Name || 'ادمین ۱'
+    state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول'
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Pallet specific state: weights of 5 reels
-  const [reelWeights, setReelWeights] = useState<number[]>([150, 148, 152, 145, 149]);
+  // Pallet specific state: weights of dynamic reels
+  const [reelWeights, setReelWeights] = useState<(number | '')[]>([150, 148, 152, 145, 149]);
 
   // Standalone item weight/count/length
   const [weightKg, setWeightKg] = useState<number>(initialData?.weightKg || 150);
@@ -85,9 +85,9 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentTotalWeight =
+  const currentTotalWeight: number =
     category === 'pallet'
-      ? reelWeights.reduce((a, b) => a + Number(b || 0), 0)
+      ? reelWeights.filter((w) => Number(w) > 0).reduce<number>((a, b) => a + Number(b), 0)
       : Number(weightKg) || 0;
 
   const calculatedTotalPrice = Math.round(currentTotalWeight * (Number(pricePerKg) || 0));
@@ -115,10 +115,11 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
     };
 
     if (category === 'pallet') {
-      const reels: ReelItem[] = reelWeights.map((w, idx) => ({
+      const validWeights = reelWeights.filter((w) => Number(w) > 0);
+      const reels: ReelItem[] = validWeights.map((w, idx) => ({
         id: `rel-${Date.now()}-${idx}`,
         serialNo: `Q-${brand.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-        weightKg: Number(w) || 150,
+        weightKg: Number(w),
       }));
       entryData.reels = reels;
     } else if (category === 'reel') {
@@ -289,35 +290,85 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
             </div>
           </div>
 
-          {/* PALLET SPECIFIC WEIGHTS INPUT (5 REELS) */}
+          {/* PALLET SPECIFIC WEIGHTS INPUT WITH DYNAMIC REEL COUNT */}
           {category === 'pallet' && (
-            <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200 space-y-3">
-              <span className="font-bold text-xs text-amber-900 block">
-                وزن قرقره‌های روی پالت (معمولاً ۵ قرقره):
-              </span>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-amber-900">
+                  وزن قرقره‌های روی پالت:
+                </span>
+                
+                {/* Dynamically adjust count of reels */}
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (reelWeights.length > 1) {
+                        setReelWeights(reelWeights.slice(0, -1));
+                      }
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-sm transition-all shadow-xs cursor-pointer"
+                    title="حذف قرقره آخر"
+                  >
+                    -
+                  </button>
+                  <span className="text-xs font-bold text-amber-950 bg-amber-200/60 px-3 py-1 rounded-lg">
+                    {reelWeights.length} قرقره
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReelWeights([...reelWeights, 150]);
+                    }}
+                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm transition-all shadow-xs cursor-pointer"
+                    title="افزودن قرقره جدید"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
                 {reelWeights.map((w, idx) => (
-                  <div key={idx}>
+                  <div key={idx} className="relative group">
                     <label className="block text-[10px] font-bold text-amber-800 mb-1">
                       قرقره {idx + 1} (kg):
                     </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      required
-                      value={w}
-                      onChange={(e) => {
-                        const newW = [...reelWeights];
-                        newW[idx] = Number(e.target.value);
-                        setReelWeights(newW);
-                      }}
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={w}
+                        placeholder="0"
+                        onChange={(e) => {
+                          const newW = [...reelWeights];
+                          const val = e.target.value;
+                          newW[idx] = val === '' ? '' : Number(val);
+                          setReelWeights(newW);
+                        }}
                         className="w-full p-2 bg-white rounded-lg border border-amber-300 text-xs font-bold text-slate-900"
-                    />
+                      />
+                      {reelWeights.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newW = reelWeights.filter((_, i) => i !== idx);
+                            setReelWeights(newW);
+                          }}
+                          className="absolute -top-1 -left-1 hidden group-hover:flex w-4 h-4 bg-red-100 hover:bg-red-200 text-red-600 rounded-full items-center justify-center text-[10px] cursor-pointer"
+                          title="حذف این قرقره"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-              <div className="text-left text-xs font-black text-amber-800 pt-1">
-                وزن کل پالت: {formatKg(reelWeights.reduce((a, b) => a + Number(b || 0), 0))}
+              
+              <div className="flex justify-between items-center text-xs font-black text-amber-800 pt-1 border-t border-amber-200/50">
+                <span className="text-amber-700 font-normal">تعداد کل قرقره‌های ثبت شونده: {reelWeights.filter(w => Number(w) > 0).length} عدد</span>
+                <span>وزن کل پالت: {formatKg(reelWeights.filter(w => Number(w) > 0).reduce<number>((a, b) => a + Number(b), 0))}</span>
               </div>
             </div>
           )}
@@ -478,13 +529,13 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
                 onChange={(e) => setPurchaser(e.target.value)}
                 className="w-full p-2.5 bg-amber-50/70 rounded-xl border border-amber-300 text-xs font-bold text-amber-900"
               >
-                <option value={state.warehouseProfile.partnerInfo?.partner1Name || 'ادمین ۱'}>
-                  {state.warehouseProfile.partnerInfo?.partner1Name || 'ادمین ۱'} (شریک اول)
+                <option value={state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول'}>
+                  {state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول'}
                 </option>
-                <option value={state.warehouseProfile.partnerInfo?.partner2Name || 'ادمین ۲'}>
-                  {state.warehouseProfile.partnerInfo?.partner2Name || 'ادمین ۲'} (شریک دوم)
+                <option value={state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم'}>
+                  {state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم'}
                 </option>
-                <option value="حساب مشترک (۵۰-۵۰)">حساب مشترک انبار (۵۰-۵۰)</option>
+                <option value="حساب مشترک">حساب مشترک انبار</option>
               </select>
             </div>
 
