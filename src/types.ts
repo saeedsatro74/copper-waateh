@@ -290,6 +290,7 @@ export interface SelectedItemForAction {
   id: string;
   category: Category;
   subItemId?: string; // e.g., reel ID inside a pallet
+  serialNo?: string;
   palletCode?: string;
   brand: Brand;
   thickness: Thickness;

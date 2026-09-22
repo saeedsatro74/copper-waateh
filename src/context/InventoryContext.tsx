@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { ToastContainer, ToastMessage } from '../components/Toast';
 import {
   InventoryState,
   PalletItem,
+  ReelItem,
   StandaloneReelItem,
   CoilItem,
   BranchItem,
@@ -35,6 +37,8 @@ interface InventoryContextType {
   // Cloud & Supabase Sync
   isCloudConnected: boolean;
   isCloudSyncing: boolean;
+  isOperationLoading: boolean;
+  lastActionDescription: string | null;
   lastCloudSyncTime: string | null;
   cloudSyncError: string | null;
   syncNowWithCloud: () => Promise<void>;
@@ -113,13 +117,16 @@ interface InventoryContextType {
   deleteInventoryItem: (category: Category, id: string) => void;
   deleteInvoice: (invoiceId: string) => void;
   deleteTransaction: (transactionId: string) => void;
-  deleteConsignment: (consignmentId: string) => void;
+  deleteConsignment: (consignmentId: string, returnToStock?: boolean) => void;
   clearAllData: () => void;
   
   // Selected items helper for header exit/entry action
   selectedItems: SelectedItemForAction[];
   toggleSelectItem: (item: SelectedItemForAction) => void;
   clearSelectedItems: () => void;
+
+  // Visual Notifications & Alerts
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -172,22 +179,125 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Cloud / Supabase Sync State
   const [isCloudConnected, setIsCloudConnected] = useState<boolean>(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const [isOperationLoading, setIsOperationLoading] = useState<boolean>(false);
+  const [lastActionDescription, setLastActionDescription] = useState<string | null>(null);
   const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(null);
   const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(initialUsers[0]); // Default logged in as manager
+  // Timestamp of last local modification to prevent stale cloud broadcasts from reverting changes
+  const lastLocalMutationTime = useRef<number>(0);
+  const cloudSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load previously authenticated user session if valid, otherwise require login
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedSession =
+          sessionStorage.getItem('COPPER_AUTH_USER_V1') ||
+          localStorage.getItem('COPPER_AUTH_USER_V1');
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession);
+          if (parsed && parsed.id && parsed.username) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to parse auth session:', e);
+      }
+    }
+    return null; // Require login screen on new browser/session
+  });
   const [selectedItems, setSelectedItems] = useState<SelectedItemForAction[]>([]);
 
-  // Helper to commit state changes with undo history
-  const updatePresentState = (newPresent: InventoryState) => {
+  // Toast Notifications
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Update session storage when currentUser changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        if (currentUser) {
+          sessionStorage.setItem('COPPER_AUTH_USER_V1', JSON.stringify(currentUser));
+        } else {
+          sessionStorage.removeItem('COPPER_AUTH_USER_V1');
+        }
+      } catch (e) {
+        console.warn('SessionStorage save error:', e);
+      }
+    }
+  }, [currentUser]);
+
+  // Helper to commit state changes with undo history and immediate local & cloud persistence
+  const updatePresentState = (newPresent: InventoryState, actionDescription?: string) => {
+    lastLocalMutationTime.current = Date.now();
+    
+    // 1. Update React state
     setHistory((prev) => ({
       past: [...prev.past, prev.present],
       present: newPresent,
       future: [], // clear redo stack on new action
     }));
+
+    // 2. Immediate LocalStorage commit
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newPresent));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
+    }
+
+    // 3. Trigger UI loading & Cloud Push immediately
+    setIsOperationLoading(true);
+    if (actionDescription) {
+      setLastActionDescription(actionDescription);
+    }
+
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      setIsCloudSyncing(true);
+      if (cloudSaveTimeoutRef.current) {
+        clearTimeout(cloudSaveTimeoutRef.current);
+      }
+      
+      saveRemoteInventory(newPresent).then((res) => {
+        if (res.success) {
+          setIsCloudConnected(true);
+          setLastCloudSyncTime(new Date().toLocaleTimeString('fa-IR'));
+          setCloudSyncError(null);
+        } else if (res.error) {
+          setCloudSyncError(res.error);
+        }
+      }).catch((err) => {
+        setCloudSyncError(err?.message || 'خطا در ذخیره ابری');
+      }).finally(() => {
+        setTimeout(() => {
+          setIsCloudSyncing(false);
+          setIsOperationLoading(false);
+          setLastActionDescription(null);
+        }, 200);
+      });
+    } else {
+      setTimeout(() => {
+        setIsOperationLoading(false);
+        setLastActionDescription(null);
+      }, 200);
+    }
   };
 
-  // 1. Auto-save to LocalStorage whenever state changes
+  // 1. Synchronize to LocalStorage whenever present changes (safety fallback)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -203,19 +313,24 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const config = getSupabaseConfig();
     if (!config.isConfigured) return;
     setIsCloudSyncing(true);
+    setIsOperationLoading(true);
     setCloudSyncError(null);
     try {
       const res = await saveRemoteInventory(history.present);
       if (res.success) {
         setIsCloudConnected(true);
         setLastCloudSyncTime(new Date().toLocaleTimeString('fa-IR'));
+        showToast('اطلاعات با موفقیت در دیتابیس ابری همگام گردید.', 'success');
       } else if (res.error) {
         setCloudSyncError(res.error);
+        showToast(`خطای همگام‌سازی ابری: ${res.error}`, 'error');
       }
     } catch (err: any) {
       setCloudSyncError(err.message || 'خطا در همگام‌سازی ابری');
+      showToast('خطا در ارتباط با سرور ابری', 'error');
     } finally {
       setIsCloudSyncing(false);
+      setIsOperationLoading(false);
     }
   };
 
@@ -223,14 +338,27 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const reloadFromCloud = async () => {
     const config = getSupabaseConfig();
     if (!config.isConfigured) return;
+    
+    // If user made a local modification in the last 4 seconds, don't overwrite with older remote data
+    if (Date.now() - lastLocalMutationTime.current < 4000) {
+      return;
+    }
+
     setIsCloudSyncing(true);
     setCloudSyncError(null);
     try {
       const remote = await fetchRemoteInventory();
       if (remote.state) {
-        updatePresentState(remote.state);
-        setIsCloudConnected(true);
-        setLastCloudSyncTime(remote.updatedAt ? new Date(remote.updatedAt).toLocaleTimeString('fa-IR') : 'هم‌اکنون');
+        // Double check local mutation time before applying
+        if (Date.now() - lastLocalMutationTime.current >= 4000) {
+          setHistory((prev) => ({
+            past: [...prev.past, prev.present],
+            present: remote.state as InventoryState,
+            future: [],
+          }));
+          setIsCloudConnected(true);
+          setLastCloudSyncTime(remote.updatedAt ? new Date(remote.updatedAt).toLocaleTimeString('fa-IR') : 'هم‌اکنون');
+        }
       } else if (remote.error) {
         setCloudSyncError(remote.error);
       } else {
@@ -267,6 +395,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           'postgres_changes',
           { event: '*', schema: 'public', table: 'warehouse_sync' },
           (payload: any) => {
+            // Protect against overwriting fresh local mutations with stale broadcasts
+            if (Date.now() - lastLocalMutationTime.current < 4000) {
+              return;
+            }
+
             if (payload.new && payload.new.data) {
               setHistory((prev) => ({
                 past: [...prev.past, prev.present],
@@ -287,23 +420,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.warn('Realtime subscription error:', err);
     }
   }, []);
-
-  // 5. Debounced auto-save to cloud on local changes
-  useEffect(() => {
-    const config = getSupabaseConfig();
-    if (!config.isConfigured) return;
-
-    const timeout = setTimeout(() => {
-      saveRemoteInventory(history.present).then((res) => {
-        if (res.success) {
-          setIsCloudConnected(true);
-          setLastCloudSyncTime(new Date().toLocaleTimeString('fa-IR'));
-        }
-      });
-    }, 1500);
-
-    return () => clearTimeout(timeout);
-  }, [history.present]);
 
   const undo = () => {
     setHistory((prev) => {
@@ -337,11 +453,19 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Auth functions
   const login = (username: string, password?: string): User | null => {
+    const cleanUsername = (username || '').toLowerCase().trim();
+    const cleanPassword = (password || '').trim();
+
+    if (!cleanUsername || !cleanPassword) {
+      return null;
+    }
+
     const found = state.users.find(
-      (u) => u.username.toLowerCase() === username.toLowerCase().trim()
+      (u) => u.username.toLowerCase() === cleanUsername
     );
     if (found) {
-      if (!password || found.password === password) {
+      // Must match password strictly
+      if (found.password && found.password.trim() === cleanPassword) {
         setCurrentUser(found);
         return found;
       }
@@ -351,6 +475,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const logout = () => {
     setCurrentUser(null);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('COPPER_AUTH_USER_V1');
+      localStorage.removeItem('COPPER_AUTH_USER_V1');
+    }
   };
 
   // Toggle item selection for Exit / Issuance
@@ -425,6 +553,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       reels: updatedReels,
       transactions: updatedTransactions,
     });
+
+    showToast(`پالت ${pallet.palletCode} باز شد و ${pallet.reels.length} قرقره به بخش قرقره‌ها اضافه شد.`, 'success');
   };
 
   // Rule: Unpack Reel to Loose (خورده‌فروشی)
@@ -469,6 +599,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       loose: updatedLoose,
       transactions: updatedTransactions,
     });
+
+    showToast(`قرقره ${reel.reelCode} باز شد و به بخش خورده‌فروشی منتقل گردید.`, 'success');
   };
 
   // Deduct weight from Loose Item (e.g. deduct 5 kg from loose item)
@@ -506,6 +638,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       loose: updatedLoose,
       transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`کسر وزن ${deductKg} کیلوگرم از بار خورده با موفقیت ثبت شد.`, 'success');
   };
 
   // Deduct weight/meters from Reel & automatically move remaining reel to Loose
@@ -555,6 +689,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       loose: updatedLoose,
       transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`کسر وزن ${deductKg} کیلوگرم ثبت شد و باقیمانده به خورده‌فروشی منتقل گردید.`, 'success');
   };
 
   // Add Stock Entry (ورود جدید به انبار)
@@ -758,6 +894,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       transactions: [newTx, ...state.transactions],
       balanceAdjustments: newAdjustments,
     });
+
+    showToast(`ورود کالای جدید به انبار با موفقیت ثبت شد (${supplierName}).`, 'success');
   };
 
   // Process Stock Exit & Issue Proforma Invoice
@@ -781,6 +919,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let totalCalculatedAmount = 0;
     const invoiceLineItems: any[] = [];
     const itemSummaries: string[] = [];
+
+    // Map subItems per pallet to support multiple selections from same pallet
+    const palletSubItemsMap = new Map<string, string[]>();
+    const wholePalletIds = new Set<string>();
 
     itemsToExit.forEach((item, index) => {
       totalWeight += item.weightKg;
@@ -816,33 +958,14 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         `${item.description} - ${item.brand} (وزن: ${item.weightKg} کیلوگرم ، فی: ${itemUnitPrice.toLocaleString('fa-IR')} تومان)`
       );
 
-      // Remove or update items from state
+      // Categorize items
       if (item.category === 'pallet') {
         if (item.subItemId) {
-          // A specific reel inside a sealed pallet was issued!
-          // Unpack the pallet and remove that reel!
-          const pallet = updatedPallets.find((p) => p.id === item.id);
-          if (pallet) {
-            const remainingReels = pallet.reels.filter((r) => r.id !== item.subItemId);
-            // Move remaining reels into standalone reels
-            const newStandalone = remainingReels.map((r, i) => ({
-              id: `srel-exit-unp-${Date.now()}-${i}`,
-              reelCode: r.serialNo,
-              brand: pallet.brand,
-              thickness: pallet.thickness,
-              diameter: pallet.diameter,
-              weightKg: r.weightKg,
-              originPalletCode: pallet.palletCode,
-              entryDate: getPersianDateString(),
-              location: pallet.location,
-              notes: `باقیمانده از پالت ${pallet.palletCode} پس از خروج یک قرقره`,
-            }));
-            updatedPallets = updatedPallets.filter((p) => p.id !== item.id);
-            updatedReels = [...updatedReels, ...newStandalone];
-          }
+          const arr = palletSubItemsMap.get(item.id) || [];
+          arr.push(item.subItemId);
+          palletSubItemsMap.set(item.id, arr);
         } else {
-          // Whole pallet issued
-          updatedPallets = updatedPallets.filter((p) => p.id !== item.id);
+          wholePalletIds.add(item.id);
         }
       } else if (item.category === 'reel') {
         updatedReels = updatedReels.filter((r) => r.id !== item.id);
@@ -854,6 +977,40 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updatedLoose = updatedLoose.filter((l) => l.id !== item.id);
       }
     });
+
+    // Process Pallets with unpack logic
+    const remainingPallets: PalletItem[] = [];
+    const newStandaloneFromPallets: StandaloneReelItem[] = [];
+
+    updatedPallets.forEach((pallet) => {
+      if (wholePalletIds.has(pallet.id)) {
+        return;
+      }
+      if (palletSubItemsMap.has(pallet.id)) {
+        const removedSubItemIds = new Set(palletSubItemsMap.get(pallet.id));
+        const remainingReels = pallet.reels.filter((r) => !removedSubItemIds.has(r.id));
+        
+        remainingReels.forEach((r, idx) => {
+          newStandaloneFromPallets.push({
+            id: `srel-exit-unp-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+            reelCode: r.serialNo,
+            brand: pallet.brand,
+            thickness: pallet.thickness,
+            diameter: pallet.diameter,
+            weightKg: r.weightKg,
+            originPalletCode: pallet.palletCode,
+            entryDate: getPersianDateString(),
+            location: pallet.location,
+            notes: `باقیمانده از پالت ${pallet.palletCode} پس از خروج قرقره‌ها`,
+          });
+        });
+        return;
+      }
+      remainingPallets.push(pallet);
+    });
+
+    updatedPallets = remainingPallets;
+    updatedReels = [...updatedReels, ...newStandaloneFromPallets];
 
     const invoiceNum =
       customInvoiceNum ||
@@ -910,6 +1067,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // Clear selections
     setSelectedItems([]);
+
+    showToast(`پیش‌فاکتور ${invoiceNum} صادر و از موجودی انبار کسر گردید.`, 'success');
 
     return newInvoice;
   };
@@ -1054,6 +1213,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       invoices: updatedInvoices,
       transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`پیش‌فاکتور ${inv.invoiceNumber} لغو شد و اقلام به انبار بازگشتند.`, 'info');
   };
 
   // Confirm Final Exit and Issue Official Invoice
@@ -1119,6 +1280,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       invoices: updatedInvoices,
       transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`خروج قطعی و فاکتور رسمی ${officialNum} تأیید گردید.`, 'success');
   };
 
   // Consignment Operations
@@ -1138,6 +1301,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let updatedBranches = [...state.branches];
     let updatedLoose = [...state.loose];
     const newConsignments: ConsignmentItem[] = [];
+
+    // Map subItems per pallet
+    const palletSubItemsMap = new Map<string, string[]>();
+    const wholePalletIds = new Set<string>();
 
     items.forEach((item, index) => {
       const code = `AMN-${Date.now().toString().slice(-4)}-${index + 1}`;
@@ -1164,14 +1331,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       if (item.category === 'pallet') {
         if (item.subItemId) {
-          updatedPallets = updatedPallets.map((p) => {
-            if (p.id === item.id) {
-              return { ...p, reels: p.reels.filter((r) => r.id !== item.subItemId) };
-            }
-            return p;
-          });
+          const arr = palletSubItemsMap.get(item.id) || [];
+          arr.push(item.subItemId);
+          palletSubItemsMap.set(item.id, arr);
         } else {
-          updatedPallets = updatedPallets.filter((p) => p.id !== item.id);
+          wholePalletIds.add(item.id);
         }
       } else if (item.category === 'reel') {
         updatedReels = updatedReels.filter((r) => r.id !== item.id);
@@ -1183,6 +1347,31 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updatedLoose = updatedLoose.filter((l) => l.id !== item.id);
       }
     });
+
+    // Process Pallets that have subItems or whole removals
+    const remainingPallets: PalletItem[] = [];
+
+    updatedPallets.forEach((pallet) => {
+      if (wholePalletIds.has(pallet.id)) {
+        return;
+      }
+      if (palletSubItemsMap.has(pallet.id)) {
+        const removedSubItemIds = new Set(palletSubItemsMap.get(pallet.id));
+        const remainingReels = pallet.reels.filter((r) => !removedSubItemIds.has(r.id));
+        
+        // If some reels remain, keep the pallet with remaining reels intact!
+        if (remainingReels.length > 0) {
+          remainingPallets.push({
+            ...pallet,
+            reels: remainingReels,
+          });
+        }
+        return;
+      }
+      remainingPallets.push(pallet);
+    });
+
+    updatedPallets = remainingPallets;
 
     const totalWeight = items.reduce((acc, i) => acc + i.weightKg, 0);
 
@@ -1212,26 +1401,149 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     setSelectedItems([]);
+
+    showToast(`تعداد ${items.length} قلم کالا با موفقیت به لیست امانی (${recipientName}) منتقل شد.`, 'success');
   };
 
   const returnFromConsignment = (consignmentId: string) => {
     const csg = (state.consignments || []).find((c) => c.id === consignmentId);
     if (!csg || csg.status !== 'active') return;
 
+    let updatedPallets = [...state.pallets];
+    let updatedReels = [...state.reels];
+    let updatedCoils = [...state.coils];
+    let updatedBranches = [...state.branches];
     let updatedLoose = [...state.loose];
-    const newLoose: LooseItem = {
-      id: `los-csg-${Date.now()}`,
-      code: `LSE-RST-${Math.floor(100 + Math.random() * 900)}`,
-      brand: csg.brand,
-      thickness: csg.thickness,
-      diameter: csg.diameter,
-      weightKg: csg.weightKg,
-      description: `برگشتی از امانی ${csg.recipientName} (کد ${csg.code})`,
-      originType: 'direct_entry',
-      entryDate: getPersianDateString(),
-      notes: `بازگشت به انبار از لیست امانی تحویل‌گیرنده ${csg.recipientName}`,
-    };
-    updatedLoose.unshift(newLoose);
+
+    // Return to corresponding category
+    if (csg.category === 'pallet') {
+      const palletCode = (csg.originalItemData as any)?.palletCode || csg.code;
+      const isSubItem = Boolean(csg.originalItemData?.subItemId);
+
+      if (isSubItem) {
+        const restoredSerialNo =
+          csg.originalItemData?.serialNo ||
+          (csg.description && csg.description.includes('قرقره')
+            ? csg.description.replace(/\(از پالت.*?\)/g, '').replace('قرقره', '').trim()
+            : '') ||
+          csg.code;
+
+        // Reel that originated from a pallet
+        const existingPalletIdx = updatedPallets.findIndex(
+          (p) => p.palletCode === palletCode || p.id === csg.originalItemData?.id
+        );
+
+        if (existingPalletIdx >= 0) {
+          // Pallet still exists! Put reel back into pallet reels
+          const targetPallet = updatedPallets[existingPalletIdx];
+          const restoredSubItem: ReelItem = {
+            id: csg.originalItemData?.subItemId || `rel-${Date.now()}`,
+            serialNo: restoredSerialNo,
+            weightKg: csg.weightKg,
+          };
+          updatedPallets[existingPalletIdx] = {
+            ...targetPallet,
+            status: targetPallet.status || 'opened',
+            reels: [restoredSubItem, ...targetPallet.reels],
+          };
+        } else {
+          // Pallet was previously emptied, recreate the pallet with this returned reel
+          const newPallet: PalletItem = {
+            id: csg.originalItemData?.id || `plt-ret-${Date.now()}`,
+            palletCode: palletCode,
+            brand: csg.brand,
+            thickness: csg.thickness,
+            diameter: csg.diameter,
+            status: 'opened',
+            entryDate: getPersianDateString(),
+            location: 'انبار اصلی',
+            notes: `بازگشت به پالت از امانی ${csg.recipientName}`,
+            reels: [
+              {
+                id: csg.originalItemData?.subItemId || `rel-${Date.now()}`,
+                serialNo: restoredSerialNo,
+                weightKg: csg.weightKg,
+              },
+            ],
+          };
+          updatedPallets.unshift(newPallet);
+        }
+      } else {
+        // Whole Pallet returned
+        const restoredPallet: PalletItem = {
+          id: csg.originalItemData?.id || `plt-ret-${Date.now()}`,
+          palletCode: csg.code,
+          brand: csg.brand,
+          thickness: csg.thickness,
+          diameter: csg.diameter,
+          status: (csg.originalItemData as any)?.status || 'sealed',
+          entryDate: getPersianDateString(),
+          location: 'انبار اصلی',
+          notes: `بازگشت از امانی ${csg.recipientName}`,
+          reels: (csg.originalItemData as any)?.reels || [
+            {
+              id: `rel-${Date.now()}`,
+              serialNo: `${csg.code}-1`,
+              weightKg: csg.weightKg,
+            },
+          ],
+        };
+        updatedPallets.unshift(restoredPallet);
+      }
+    } else if (csg.category === 'reel') {
+      const restoredReel: StandaloneReelItem = {
+        id: csg.originalItemData?.id || `srel-csg-ret-${Date.now()}`,
+        reelCode: csg.code,
+        brand: csg.brand,
+        thickness: csg.thickness,
+        diameter: csg.diameter,
+        weightKg: csg.weightKg,
+        originPalletCode: (csg.originalItemData as any)?.originPalletCode || 'امانی',
+        entryDate: getPersianDateString(),
+        location: 'انبار اصلی',
+        notes: `برگشتی از امانی ${csg.recipientName}`,
+      };
+      updatedReels.unshift(restoredReel);
+    } else if (csg.category === 'coil') {
+      updatedCoils.unshift({
+        id: csg.originalItemData?.id || `coil-csg-ret-${Date.now()}`,
+        code: csg.code,
+        brand: csg.brand,
+        thickness: csg.thickness,
+        diameter: csg.diameter,
+        weightKg: csg.weightKg,
+        entryDate: getPersianDateString(),
+        location: 'انبار اصلی',
+        notes: `برگشتی از امانی ${csg.recipientName}`,
+      });
+    } else if (csg.category === 'branch') {
+      updatedBranches.unshift({
+        id: csg.originalItemData?.id || `brn-csg-ret-${Date.now()}`,
+        code: csg.code,
+        brand: csg.brand,
+        thickness: csg.thickness,
+        diameter: csg.diameter,
+        lengthMeters: (csg.originalItemData as any)?.lengthMeters || 6,
+        count: (csg.originalItemData as any)?.count || 1,
+        totalWeightKg: csg.weightKg,
+        entryDate: getPersianDateString(),
+        location: 'انبار اصلی',
+        notes: `برگشتی از امانی ${csg.recipientName}`,
+      });
+    } else {
+      updatedLoose.unshift({
+        id: csg.originalItemData?.id || `los-csg-${Date.now()}`,
+        code: csg.code || `LSE-RST-${Math.floor(100 + Math.random() * 900)}`,
+        brand: csg.brand,
+        thickness: csg.thickness,
+        diameter: csg.diameter,
+        weightKg: csg.weightKg,
+        description: `برگشتی از امانی ${csg.recipientName} (کد ${csg.code})`,
+        originType: 'direct_entry',
+        entryDate: getPersianDateString(),
+        notes: `بازگشت به انبار از لیست امانی تحویل‌گیرنده ${csg.recipientName}`,
+      });
+    }
 
     const updatedConsignments = (state.consignments || []).map((c) =>
       c.id === consignmentId ? { ...c, status: 'returned' as const } : c
@@ -1253,10 +1565,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     updatePresentState({
       ...state,
+      pallets: updatedPallets,
+      reels: updatedReels,
+      coils: updatedCoils,
+      branches: updatedBranches,
       loose: updatedLoose,
       consignments: updatedConsignments,
       transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`کالای امانی (${csg.code}) با موفقیت به موجودی انبار بازگردانده شد.`, 'success');
   };
 
   const convertConsignmentToSale = (consignmentId: string, unitPrice: number, customerPhone?: string) => {
@@ -1307,6 +1625,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       invoices: [newInvoice, ...state.invoices],
     });
 
+    showToast(`کالای امانی (${csg.code}) به پیش‌فاکتور فروش ${invNum} تبدیل گردید.`, 'success');
+
     return newInvoice;
   };
 
@@ -1318,6 +1638,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         partnerInfo: info,
       },
     });
+
+    showToast('اطلاعات و درصد شرکا ذخیره گردید.', 'success');
   };
 
   const adjustPartnerBalance = (
@@ -1498,6 +1820,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         brands: [...currentBrands, trimmed],
       },
     });
+    showToast(`کارخانه جدید «${trimmed}» اضافه شد.`, 'success');
   };
 
   const deleteBrand = (brandName: string): boolean => {
@@ -1515,6 +1838,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         brands: currentBrands.filter((b) => b !== brandName),
       },
     });
+    showToast(`کارخانه «${brandName}» حذف شد.`, 'info');
     return true;
   };
 
@@ -1574,6 +1898,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ...state.transactions,
       ],
     });
+
+    showToast(`${itemTitle} با موفقیت از انبار حذف گردید.`, 'info');
   };
 
   const deleteInvoice = (invoiceId: string) => {
@@ -1581,6 +1907,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ...state,
       invoices: state.invoices.filter((inv) => inv.id !== invoiceId),
     });
+    showToast('فاکتور مورد نظر حذف گردید.', 'info');
   };
 
   const deleteTransaction = (transactionId: string) => {
@@ -1588,13 +1915,173 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ...state,
       transactions: state.transactions.filter((tx) => tx.id !== transactionId),
     });
+    showToast('تراکنش حذف گردید.', 'info');
   };
 
-  const deleteConsignment = (consignmentId: string) => {
+  const deleteConsignment = (consignmentId: string, returnToStock: boolean = false) => {
+    const csg = (state.consignments || []).find((c) => c.id === consignmentId);
+    if (!csg) return;
+
+    let updatedPallets = [...state.pallets];
+    let updatedReels = [...state.reels];
+    let updatedCoils = [...state.coils];
+    let updatedBranches = [...state.branches];
+    let updatedLoose = [...state.loose];
+
+    if (returnToStock && csg.status === 'active') {
+      if (csg.category === 'pallet') {
+        const palletCode = (csg.originalItemData as any)?.palletCode || csg.code;
+        const isSubItem = Boolean(csg.originalItemData?.subItemId);
+
+        if (isSubItem) {
+          const restoredSerialNo =
+            csg.originalItemData?.serialNo ||
+            (csg.description && csg.description.includes('قرقره')
+              ? csg.description.replace(/\(از پالت.*?\)/g, '').replace('قرقره', '').trim()
+              : '') ||
+            csg.code;
+
+          const existingPalletIdx = updatedPallets.findIndex(
+            (p) => p.palletCode === palletCode || p.id === csg.originalItemData?.id
+          );
+
+          if (existingPalletIdx >= 0) {
+            const targetPallet = updatedPallets[existingPalletIdx];
+            const restoredSubItem: ReelItem = {
+              id: csg.originalItemData?.subItemId || `rel-${Date.now()}`,
+              serialNo: restoredSerialNo,
+              weightKg: csg.weightKg,
+            };
+            updatedPallets[existingPalletIdx] = {
+              ...targetPallet,
+              status: targetPallet.status || 'opened',
+              reels: [restoredSubItem, ...targetPallet.reels],
+            };
+          } else {
+            const newPallet: PalletItem = {
+              id: csg.originalItemData?.id || `plt-ret-${Date.now()}`,
+              palletCode: palletCode,
+              brand: csg.brand,
+              thickness: csg.thickness,
+              diameter: csg.diameter,
+              status: 'opened',
+              entryDate: getPersianDateString(),
+              location: 'انبار اصلی',
+              notes: `بازگشت به پالت از حذف امانی ${csg.recipientName}`,
+              reels: [
+                {
+                  id: csg.originalItemData?.subItemId || `rel-${Date.now()}`,
+                  serialNo: restoredSerialNo,
+                  weightKg: csg.weightKg,
+                },
+              ],
+            };
+            updatedPallets.unshift(newPallet);
+          }
+        } else {
+          const restoredPallet: PalletItem = {
+            id: csg.originalItemData?.id || `plt-ret-${Date.now()}`,
+            palletCode: csg.code,
+            brand: csg.brand,
+            thickness: csg.thickness,
+            diameter: csg.diameter,
+            status: (csg.originalItemData as any)?.status || 'sealed',
+            entryDate: getPersianDateString(),
+            location: 'انبار اصلی',
+            notes: `بازگشت از امانی ${csg.recipientName}`,
+            reels: (csg.originalItemData as any)?.reels || [
+              {
+                id: `rel-${Date.now()}`,
+                serialNo: `${csg.code}-1`,
+                weightKg: csg.weightKg,
+              },
+            ],
+          };
+          updatedPallets.unshift(restoredPallet);
+        }
+      } else if (csg.category === 'reel') {
+        updatedReels.unshift({
+          id: csg.originalItemData?.id || `srel-csg-ret-${Date.now()}`,
+          reelCode: csg.code,
+          brand: csg.brand,
+          thickness: csg.thickness,
+          diameter: csg.diameter,
+          weightKg: csg.weightKg,
+          originPalletCode: (csg.originalItemData as any)?.originPalletCode || 'امانی',
+          entryDate: getPersianDateString(),
+          location: 'انبار اصلی',
+          notes: `برگشتی از امانی ${csg.recipientName}`,
+        });
+      } else if (csg.category === 'coil') {
+        updatedCoils.unshift({
+          id: csg.originalItemData?.id || `coil-csg-ret-${Date.now()}`,
+          code: csg.code,
+          brand: csg.brand,
+          thickness: csg.thickness,
+          diameter: csg.diameter,
+          weightKg: csg.weightKg,
+          entryDate: getPersianDateString(),
+          location: 'انبار اصلی',
+          notes: `برگشتی از امانی ${csg.recipientName}`,
+        });
+      } else if (csg.category === 'branch') {
+        updatedBranches.unshift({
+          id: csg.originalItemData?.id || `brn-csg-ret-${Date.now()}`,
+          code: csg.code,
+          brand: csg.brand,
+          thickness: csg.thickness,
+          diameter: csg.diameter,
+          lengthMeters: (csg.originalItemData as any)?.lengthMeters || 6,
+          count: (csg.originalItemData as any)?.count || 1,
+          totalWeightKg: csg.weightKg,
+          entryDate: getPersianDateString(),
+          location: 'انبار اصلی',
+          notes: `برگشتی از امانی ${csg.recipientName}`,
+        });
+      } else {
+        updatedLoose.unshift({
+          id: csg.originalItemData?.id || `los-csg-${Date.now()}`,
+          code: csg.code || `LSE-RST-${Math.floor(100 + Math.random() * 900)}`,
+          brand: csg.brand,
+          thickness: csg.thickness,
+          diameter: csg.diameter,
+          weightKg: csg.weightKg,
+          description: `برگشتی از امانی ${csg.recipientName} (کد ${csg.code})`,
+          originType: 'direct_entry',
+          entryDate: getPersianDateString(),
+          notes: `بازگشت به انبار از لیست امانی تحویل‌گیرنده ${csg.recipientName}`,
+        });
+      }
+    }
+
+    const updatedConsignments = (state.consignments || []).filter((c) => c.id !== consignmentId);
+
+    const newTx: Transaction = {
+      id: `trx-${Date.now()}`,
+      type: returnToStock ? 'consignment_return' : 'exit',
+      title: `حذف رکورد امانی (کد ${csg.code})`,
+      category: csg.category,
+      itemsCount: 1,
+      totalWeightKg: csg.weightKg,
+      buyerOrSupplier: csg.recipientName,
+      registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
+      timestamp: getPersianDateTimeString(),
+      details: `رکورد امانی کد ${csg.code} مربوط به ${csg.recipientName} به وزن ${csg.weightKg} کیلوگرم از سیستم حذف شد.${returnToStock ? ' (موجودی کالا به انبار بازگردانده شد)' : ''}`,
+    };
+
     updatePresentState({
       ...state,
-      consignments: (state.consignments || []).filter((c) => c.id !== consignmentId),
+      pallets: updatedPallets,
+      reels: updatedReels,
+      coils: updatedCoils,
+      branches: updatedBranches,
+      loose: updatedLoose,
+      consignments: updatedConsignments,
+      transactions: [newTx, ...state.transactions],
     });
+
+    showToast(`رکورد امانی (${csg.code}) با موفقیت حذف گردید.`, 'info');
   };
 
   const clearAllData = () => {
@@ -1628,6 +2115,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updatePresentState(clearedState);
     setSelectedItems([]);
 
+    showToast('کلیه داده‌های انبار پاکسازی گردید.', 'info');
+
     // Immediately push cleared state to cloud if Supabase is connected
     const config = getSupabaseConfig();
     if (config.isConfigured) {
@@ -1646,6 +2135,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         canRedo,
         isCloudConnected,
         isCloudSyncing,
+        isOperationLoading,
+        lastActionDescription,
         lastCloudSyncTime,
         cloudSyncError,
         syncNowWithCloud,
@@ -1682,8 +2173,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         selectedItems,
         toggleSelectItem,
         clearSelectedItems,
+        showToast,
       }}
     >
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {children}
     </InventoryContext.Provider>
   );

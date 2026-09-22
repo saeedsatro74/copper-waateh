@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Key, X, ShieldCheck, Warehouse } from 'lucide-react';
+import { User, Key, X, Warehouse } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 
 interface LoginModalProps {
@@ -8,7 +8,7 @@ interface LoginModalProps {
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
-  const { state, login, setCurrentUser } = useInventory();
+  const { login } = useInventory();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -21,6 +21,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
     const user = login(username, password);
     if (user) {
       setErrorMsg('');
+      setUsername('');
+      setPassword('');
       onClose();
     } else {
       setErrorMsg('نام کاربری یا رمز عبور اشتباه است.');
@@ -65,7 +67,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="مثلاً: manager یا admin1"
+                placeholder="نام کاربری"
                 className="w-full pr-10 pl-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 focus:outline-hidden focus:border-amber-500 dir-ltr text-right"
               />
             </div>
@@ -94,33 +96,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
           >
             ورود به سیستم
           </button>
-
-          {/* Quick Admin Selection */}
-          <div className="pt-4 border-t border-slate-100">
-            <span className="block text-[11px] font-bold text-slate-400 mb-2 text-center">
-              ورود سریع با کاربران تعریف‌شده:
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              {state.users.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => {
-                    setCurrentUser(u);
-                    onClose();
-                  }}
-                  className="p-2 text-right rounded-xl bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition-all text-xs cursor-pointer"
-                >
-                  <span className="font-bold text-slate-900 block truncate">
-                    {u.fullName}
-                  </span>
-                  <span className="text-[10px] text-amber-700 font-semibold">
-                    @{u.username} ({u.role === 'manager' ? 'مدیر' : 'ادمین'})
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </form>
       </div>
     </div>

@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   Calculator,
   Trash2,
+  Loader2,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { PalletCard } from './PalletCard';
@@ -26,6 +27,7 @@ import { TransferToConsignmentModal } from './TransferToConsignmentModal';
 import { Handshake } from 'lucide-react';
 import { DeductLooseModal } from './DeductLooseModal';
 import { DeductReelModal } from './DeductReelModal';
+import { ConsignmentsView } from './ConsignmentsView';
 import {
   Brand,
   Thickness,
@@ -34,6 +36,7 @@ import {
   SelectedItemForAction,
   LooseItem,
   StandaloneReelItem,
+  Invoice,
   THICKNESS_OPTIONS,
   DIAMETER_OPTIONS,
   ThicknessUnitMode,
@@ -46,12 +49,14 @@ interface InventoryViewProps {
   onOpenStockEntryModal: () => void;
   onOpenInvoiceModal: () => void;
   onOpenCalculatorModal: () => void;
+  onViewInvoice?: (invoice: Invoice) => void;
 }
 
 export const InventoryView: React.FC<InventoryViewProps> = ({
   onOpenStockEntryModal,
   onOpenInvoiceModal,
   onOpenCalculatorModal,
+  onViewInvoice,
 }) => {
   const {
     state,
@@ -65,7 +70,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     updateWarehouseProfile,
   } = useInventory();
 
-  const [activeCategory, setActiveCategory] = useState<Category>('pallet');
+  const [activeCategory, setActiveCategory] = useState<Category | 'consignment'>('pallet');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBrand, setFilterBrand] = useState<string>('all');
   const [filterThickness, setFilterThickness] = useState<string>('all');
@@ -76,6 +81,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [selectedReelItem, setSelectedReelItem] = useState<StandaloneReelItem | null>(null);
   const [deductReelModalOpen, setDeductReelModalOpen] = useState<boolean>(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState<boolean>(false);
+  const [itemToDelete, setItemToDelete] = useState<{ category: Category; id: string; title: string } | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
 
   const unitSettings = state.warehouseProfile.unitSettings;
 
@@ -501,6 +508,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
           <Scissors className="w-3.5 h-3.5" />
           <span>خورده‌فروشی ({state.loose.length})</span>
         </button>
+
+        <button
+          onClick={() => setActiveCategory('consignment')}
+          className={`flex items-center space-x-1.5 space-x-reverse px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+            activeCategory === 'consignment'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Handshake className="w-3.5 h-3.5" />
+          <span>امانی‌ها ({(state.consignments || []).length})</span>
+        </button>
       </div>
 
       {/* Category Content Panels */}
@@ -585,9 +604,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             </span>
                             <button
                               onClick={() => {
-                                if (window.confirm(`آیا از حذف قرقره ${reel.reelCode} از موجودی انبار اطمینان دارید؟`)) {
-                                  deleteInventoryItem('reel', reel.id);
-                                }
+                                setItemToDelete({
+                                  category: 'reel',
+                                  id: reel.id,
+                                  title: `قرقره ${reel.reelCode}`,
+                                });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف قرقره از انبار"
@@ -703,9 +724,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             </span>
                             <button
                               onClick={() => {
-                                if (window.confirm(`آیا از حذف کلاف ${coil.code} از موجودی انبار اطمینان دارید؟`)) {
-                                  deleteInventoryItem('coil', coil.id);
-                                }
+                                setItemToDelete({
+                                  category: 'coil',
+                                  id: coil.id,
+                                  title: `کلاف ${coil.code}`,
+                                });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف کلاف از انبار"
@@ -794,9 +817,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             </span>
                             <button
                               onClick={() => {
-                                if (window.confirm(`آیا از حذف بندیل شاخه ${branch.code} از موجودی انبار اطمینان دارید؟`)) {
-                                  deleteInventoryItem('branch', branch.id);
-                                }
+                                setItemToDelete({
+                                  category: 'branch',
+                                  id: branch.id,
+                                  title: `بندیل شاخه ${branch.code}`,
+                                });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف بندیل شاخه از انبار"
@@ -891,9 +916,11 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                             </span>
                             <button
                               onClick={() => {
-                                if (window.confirm(`آیا از حذف آیتم خورده ${item.code} از موجودی انبار اطمینان دارید؟`)) {
-                                  deleteInventoryItem('loose', item.id);
-                                }
+                                setItemToDelete({
+                                  category: 'loose',
+                                  id: item.id,
+                                  title: `بار خورده ${item.code}`,
+                                });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                               title="حذف آیتم خورده از انبار"
@@ -941,6 +968,13 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
             )}
           </div>
         )}
+
+        {/* CONSIGNMENTS TAB */}
+        {activeCategory === 'consignment' && (
+          <div className="pt-2">
+            <ConsignmentsView onViewInvoice={onViewInvoice} />
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -976,6 +1010,50 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         isOpen={isConsignmentModalOpen}
         onClose={() => setIsConsignmentModalOpen(false)}
       />
+
+      {/* In-app Deletion Confirmation Modal */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 text-right space-y-4">
+            <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-rose-600" />
+              <span>تأیید حذف کالا</span>
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              آیا از حذف <strong>{itemToDelete.title}</strong> از موجودی انبار اطمینان دارید؟
+            </p>
+            <div className="flex items-center gap-2 justify-end pt-2">
+              <button
+                disabled={isDeletingItem}
+                onClick={() => setItemToDelete(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                انصراف
+              </button>
+              <button
+                disabled={isDeletingItem}
+                onClick={async () => {
+                  setIsDeletingItem(true);
+                  await new Promise((r) => setTimeout(r, 120));
+                  deleteInventoryItem(itemToDelete.category, itemToDelete.id);
+                  setIsDeletingItem(false);
+                  setItemToDelete(null);
+                }}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                {isDeletingItem ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>در حال حذف...</span>
+                  </>
+                ) : (
+                  <span>بله، حذف شود</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

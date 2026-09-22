@@ -16,6 +16,7 @@ import {
   Trash2,
   Plus,
   AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import {
@@ -47,7 +48,7 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
   onClose,
   initialData,
 }) => {
-  const { addStockEntry, addBrand, deleteBrand, currentUser, state } = useInventory();
+  const { addStockEntry, state } = useInventory();
   const unitSettings = state.warehouseProfile.unitSettings;
   const brands = state.warehouseProfile.brands || ['باهنر', 'قائم', 'استریا', 'بابک'];
 
@@ -62,11 +63,7 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
   const [purchaser, setPurchaser] = useState<string>(
     state.warehouseProfile.partnerInfo?.partner1Name || 'ادمین ۱'
   );
-
-  // Brand deletion confirmation state
-  const [brandToDelete, setBrandToDelete] = useState<string | null>(null);
-  const [typedConfirmation, setTypedConfirmation] = useState('');
-  const [deleteBrandError, setDeleteBrandError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Pallet specific state: weights of 5 reels
   const [reelWeights, setReelWeights] = useState<number[]>([150, 148, 152, 145, 149]);
@@ -243,55 +240,18 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
           {/* Core Specs Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700">کارخانه / برند مس:</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newName = window.prompt('نام کارخانه یا برند تولیدکننده مس جدید:');
-                    if (newName && newName.trim()) {
-                      addBrand(newName.trim());
-                      setBrand(newName.trim());
-                    }
-                  }}
-                  className="text-[11px] font-bold text-amber-700 hover:text-amber-800 flex items-center space-x-1 space-x-reverse cursor-pointer"
-                  title="افزودن کارخانه مس جدید"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>+ کارخانه</span>
-                </button>
-              </div>
-              <div className="flex items-center space-x-1.5 space-x-reverse">
-                <select
-                  value={brand}
-                  onChange={(e) => setBrand(e.target.value as Brand)}
-                  className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800"
-                >
-                  {brands.map((b) => (
-                    <option key={b} value={b}>
-                      برند {b}
-                    </option>
-                  ))}
-                </select>
-                {brands.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!currentUser || currentUser.role !== 'manager') {
-                        alert('خطای عدم دسترسی: تنها مدیر کل انبار مجاز به حذف کارخانه‌ها می‌باشد.');
-                        return;
-                      }
-                      setBrandToDelete(brand);
-                      setTypedConfirmation('');
-                      setDeleteBrandError(null);
-                    }}
-                    className="p-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl border border-rose-200 transition-colors cursor-pointer shrink-0"
-                    title="حذف این کارخانه از سیستم (مختص مدیر)"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">کارخانه / برند مس:</label>
+              <select
+                value={brand}
+                onChange={(e) => setBrand(e.target.value as Brand)}
+                className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800"
+              >
+                {brands.map((b) => (
+                  <option key={b} value={b}>
+                    برند {b}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -590,14 +550,16 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
           <div className="pt-2 flex justify-end space-x-3 space-x-reverse">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50"
+              className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50"
             >
               انصراف
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-md cursor-pointer flex items-center space-x-2 space-x-reverse"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-bold text-xs shadow-md cursor-pointer flex items-center space-x-2 space-x-reverse"
             >
               <CheckCircle2 className="w-4 h-4" />
               <span>ثبت ورودی در انبار</span>
@@ -605,113 +567,6 @@ export const StockEntryModal: React.FC<StockEntryModalProps> = ({
           </div>
         </form>
       </div>
-
-      {/* STRICT FACTORY DELETION CONFIRMATION MODAL */}
-      {brandToDelete && (
-        <div className="fixed inset-0 z-60 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl border border-rose-200 animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-2 space-x-reverse text-rose-600">
-                <div className="w-9 h-9 rounded-xl bg-rose-100 flex items-center justify-center shrink-0">
-                  <AlertCircle className="w-5 h-5 text-rose-600" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-800">تأیید امنیتی حذف کارخانه</h3>
-                  <span className="text-[11px] text-slate-500">مختص مدیر کل انبار</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setBrandToDelete(null);
-                  setTypedConfirmation('');
-                  setDeleteBrandError(null);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                شما در حال حذف کارخانه <span className="font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200 text-xs">«{brandToDelete}»</span> از سامانه هستید.
-              </p>
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs leading-relaxed">
-                جهت جلوگیری از حذف اشتباهی، لطفاً نام کارخانه یعنی <span className="font-black text-amber-950 underline select-all">{brandToDelete}</span> یا کلمه <span className="font-black text-amber-950 underline">حذف</span> را در کادر زیر تایپ نمایید:
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  کلمه تأیید را وارد کنید:
-                </label>
-                <input
-                  type="text"
-                  value={typedConfirmation}
-                  onChange={(e) => {
-                    setTypedConfirmation(e.target.value);
-                    setDeleteBrandError(null);
-                  }}
-                  placeholder={`تایپ کنید: ${brandToDelete} یا حذف`}
-                  className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500"
-                  autoFocus
-                />
-              </div>
-
-              {deleteBrandError && (
-                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-bold flex items-center space-x-1.5 space-x-reverse">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{deleteBrandError}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 flex justify-end space-x-2 space-x-reverse border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setBrandToDelete(null);
-                  setTypedConfirmation('');
-                  setDeleteBrandError(null);
-                }}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
-              >
-                انصراف
-              </button>
-              <button
-                type="button"
-                disabled={
-                  typedConfirmation.trim() !== brandToDelete &&
-                  typedConfirmation.trim().toLowerCase() !== 'حذف' &&
-                  typedConfirmation.trim().toLowerCase() !== 'delete'
-                }
-                onClick={() => {
-                  if (!currentUser || currentUser.role !== 'manager') {
-                    setDeleteBrandError('شما دسترسی لازم برای این کار را ندارید.');
-                    return;
-                  }
-                  const trimmed = typedConfirmation.trim();
-                  if (trimmed !== brandToDelete && trimmed !== 'حذف' && trimmed.toLowerCase() !== 'delete') {
-                    setDeleteBrandError(`لطفاً نام دقیق "${brandToDelete}" یا کلمه "حذف" را تایپ فرمایید.`);
-                    return;
-                  }
-                  const success = deleteBrand(brandToDelete);
-                  if (success) {
-                    const remaining = brands.filter((b) => b !== brandToDelete);
-                    if (remaining.length > 0) setBrand(remaining[0]);
-                    setBrandToDelete(null);
-                    setTypedConfirmation('');
-                    setDeleteBrandError(null);
-                  }
-                }}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-md transition-all cursor-pointer"
-              >
-                تأیید و حذف قطعی کارخانه
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

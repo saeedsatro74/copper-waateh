@@ -15,6 +15,8 @@ import {
   Layers,
   ArrowRight,
   X,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { ConsignmentItem, Invoice } from '../types';
@@ -24,14 +26,18 @@ interface ConsignmentsViewProps {
 }
 
 export const ConsignmentsView: React.FC<ConsignmentsViewProps> = ({ onViewInvoice }) => {
-  const { state, returnFromConsignment, convertConsignmentToSale } = useInventory();
-
+  const { state, returnFromConsignment, convertConsignmentToSale, deleteConsignment } = useInventory();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'returned' | 'converted_to_sale'>('all');
 
   const [convertingItem, setConvertingItem] = useState<ConsignmentItem | null>(null);
   const [convertPricePerKg, setConvertPricePerKg] = useState<number>(3500000);
   const [customerPhoneInput, setCustomerPhoneInput] = useState<string>('');
+  const [returningItem, setReturningItem] = useState<ConsignmentItem | null>(null);
+  const [isReturningLoading, setIsReturningLoading] = useState(false);
+
+  const [deletingItem, setDeletingItem] = useState<ConsignmentItem | null>(null);
+  const [isDeletingLoading, setIsDeletingLoading] = useState(false);
 
   const [receiptItem, setReceiptItem] = useState<ConsignmentItem | null>(null);
 
@@ -56,13 +62,15 @@ export const ConsignmentsView: React.FC<ConsignmentsViewProps> = ({ onViewInvoic
     .reduce((acc, c) => acc + c.weightKg, 0);
 
   const handleReturn = (csg: ConsignmentItem) => {
-    if (
-      window.confirm(
-        `آیا از بازگشت کالای امانی ${csg.code} (تحویل‌گیرنده: ${csg.recipientName}) به موجودی انبار اطمینان دارید؟`
-      )
-    ) {
-      returnFromConsignment(csg.id);
-    }
+    setReturningItem(csg);
+  };
+
+  const confirmReturn = () => {
+    if (!returningItem || isReturningLoading) return;
+    setIsReturningLoading(true);
+    returnFromConsignment(returningItem.id);
+    setIsReturningLoading(false);
+    setReturningItem(null);
   };
 
   const handleStartConvert = (csg: ConsignmentItem) => {
@@ -118,60 +126,23 @@ export const ConsignmentsView: React.FC<ConsignmentsViewProps> = ({ onViewInvoic
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Search and Action Bar */}
       <div className="bg-white p-3.5 sm:p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Status Tabs */}
-        <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
-          <button
-            onClick={() => setFilterStatus('all')}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              filterStatus === 'all'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            همه امانی‌ها ({(state.consignments || []).length})
-          </button>
-          <button
-            onClick={() => setFilterStatus('active')}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              filterStatus === 'active'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            امانت فعال ({activeCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus('returned')}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              filterStatus === 'returned'
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            برگشت به انبار ({returnedCount})
-          </button>
-          <button
-            onClick={() => setFilterStatus('converted_to_sale')}
-            className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-              filterStatus === 'converted_to_sale'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            تبدیل به فروش ({convertedCount})
-          </button>
+        <div className="text-xs font-bold text-slate-700 flex items-center gap-2">
+          <span>لیست کل اقلام امانی:</span>
+          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-lg text-xs font-black">
+            {(state.consignments || []).length} مورد
+          </span>
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full md:w-72">
+        <div className="relative w-full md:w-80">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجو نام امانت‌گیرنده، کد..."
-            className="w-full pl-3 pr-9 py-2 rounded-2xl border border-slate-300 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+            placeholder="جستجو نام امانت‌گیرنده، کد، شماره تماس..."
+            className="w-full pl-3 pr-9 py-2 rounded-2xl border border-slate-300 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-amber-500"
           />
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
         </div>
@@ -269,13 +240,24 @@ export const ConsignmentsView: React.FC<ConsignmentsViewProps> = ({ onViewInvoic
 
               {/* Action Buttons */}
               <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
-                <button
-                  onClick={() => setReceiptItem(csg)}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                >
-                  <Printer className="w-3.5 h-3.5 text-slate-600" />
-                  <span>رسید</span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setReceiptItem(csg)}
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                    title="مشاهده و چاپ رسید امانی"
+                  >
+                    <Printer className="w-3.5 h-3.5 text-slate-600" />
+                    <span>رسید</span>
+                  </button>
+
+                  <button
+                    onClick={() => setDeletingItem(csg)}
+                    className="p-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer flex items-center justify-center shrink-0"
+                    title="حذف این رکورد امانی"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
 
                 {csg.status === 'active' && (
                   <div className="flex items-center gap-1.5">
@@ -445,6 +427,138 @@ export const ConsignmentsView: React.FC<ConsignmentsViewProps> = ({ onViewInvoic
                 <Printer className="w-4 h-4" />
                 <span>چاپ رسید امانی</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Consignment Confirmation Modal */}
+      {returningItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 text-right space-y-4">
+            <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-amber-600" />
+              <span>بازگشت کالای امانی به انبار</span>
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              آیا از بازگشت کالای امانی <strong>{returningItem.code}</strong> (تحویل‌گیرنده: <strong>{returningItem.recipientName}</strong>، به وزن <strong>{returningItem.weightKg} کیلوگرم</strong>) به موجودی فعال انبار اطمینان دارید؟
+            </p>
+            <div className="flex items-center gap-2 justify-end pt-2">
+              <button
+                type="button"
+                disabled={isReturningLoading}
+                onClick={() => setReturningItem(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                disabled={isReturningLoading}
+                onClick={confirmReturn}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                {isReturningLoading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>در حال بازگشت...</span>
+                  </>
+                ) : (
+                  <span>بله، بازگشت به انبار</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Consignment Modal */}
+      {deletingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-rose-200 max-w-sm w-full p-5 text-right space-y-4">
+            <div className="flex items-center space-x-2 space-x-reverse text-rose-600">
+              <div className="w-9 h-9 rounded-2xl bg-rose-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-900 text-base">حذف رکورد امانی</h3>
+                <span className="text-[11px] text-slate-500">کد امانی: {deletingItem.code}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-xs space-y-1">
+              <p><strong>تحویل‌گیرنده:</strong> {deletingItem.recipientName}</p>
+              <p><strong>مشخصات:</strong> {deletingItem.brand} - وزن: {deletingItem.weightKg} کیلوگرم</p>
+            </div>
+
+            {deletingItem.status === 'active' ? (
+              <div className="space-y-2">
+                <div className="p-2.5 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs leading-relaxed">
+                  این کالا در وضعیت <strong>«در دست امانت‌گیرنده»</strong> است. نحوه حذف را انتخاب نمایید:
+                </div>
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isDeletingLoading}
+                    onClick={() => {
+                      setIsDeletingLoading(true);
+                      deleteConsignment(deletingItem.id, true);
+                      setIsDeletingLoading(false);
+                      setDeletingItem(null);
+                    }}
+                    className="w-full py-2.5 px-3 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {isDeletingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                    <span>حذف و بازگشت کالا به موجودی انبار</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isDeletingLoading}
+                    onClick={() => {
+                      setIsDeletingLoading(true);
+                      deleteConsignment(deletingItem.id, false);
+                      setIsDeletingLoading(false);
+                      setDeletingItem(null);
+                    }}
+                    className="w-full py-2 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>فقط حذف رکورد از لیست</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600 leading-relaxed">
+                آیا از حذف قطعی این رکورد امانی از سیستم اطمینان دارید؟
+              </p>
+            )}
+
+            <div className="flex items-center gap-2 justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingLoading}
+                onClick={() => setDeletingItem(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                انصراف
+              </button>
+              {deletingItem.status !== 'active' && (
+                <button
+                  type="button"
+                  disabled={isDeletingLoading}
+                  onClick={() => {
+                    setIsDeletingLoading(true);
+                    deleteConsignment(deletingItem.id, false);
+                    setIsDeletingLoading(false);
+                    setDeletingItem(null);
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs flex items-center gap-1.5"
+                >
+                  {isDeletingLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>بله، حذف رکورد</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -9,6 +9,7 @@ import {
   DollarSign,
   AlertCircle,
   Handshake,
+  Loader2,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 
@@ -21,40 +22,61 @@ export const TransferToConsignmentModal: React.FC<TransferToConsignmentModalProp
   isOpen,
   onClose,
 }) => {
-  const { selectedItems, transferToConsignment } = useInventory();
+  const { selectedItems, transferToConsignment, showToast } = useInventory();
 
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [expectedReturnDate, setExpectedReturnDate] = useState('');
   const [unitPrice, setUnitPrice] = useState<number>(3500000);
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const totalWeight = selectedItems.reduce((acc, i) => acc + i.weightKg, 0);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recipientName.trim()) {
-      alert('لطفاً نام امانت‌گیرنده را وارد کنید.');
+    setValidationError(null);
+
+    if (selectedItems.length === 0) {
+      setValidationError('هیچ قلم کالایی جهت خروج امانی انتخاب نشده است.');
       return;
     }
 
-    transferToConsignment(
-      selectedItems,
-      recipientName.trim(),
-      recipientPhone.trim(),
-      expectedReturnDate.trim(),
-      notes.trim(),
-      unitPrice
-    );
+    if (!recipientName.trim()) {
+      setValidationError('لطفاً نام امانت‌گیرنده یا شرکت را وارد فرمایید.');
+      return;
+    }
 
-    // Reset form
-    setRecipientName('');
-    setRecipientPhone('');
-    setExpectedReturnDate('');
-    setNotes('');
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      // Simulate micro-delay for smooth UX feedback
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      transferToConsignment(
+        selectedItems,
+        recipientName.trim(),
+        recipientPhone.trim(),
+        expectedReturnDate.trim(),
+        notes.trim(),
+        unitPrice
+      );
+
+      // Reset form
+      setRecipientName('');
+      setRecipientPhone('');
+      setExpectedReturnDate('');
+      setNotes('');
+      setIsSubmitting(false);
+      onClose();
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setValidationError(err?.message || 'خطا در ثبت انتقال امانی');
+      showToast?.(err?.message || 'خطا در ثبت انتقال امانی', 'error');
+    }
   };
 
   return (
@@ -177,6 +199,13 @@ export const TransferToConsignmentModal: React.FC<TransferToConsignmentModalProp
             />
           </div>
 
+          {validationError && (
+            <div className="bg-rose-50 p-3 rounded-xl border border-rose-200 text-xs text-rose-700 font-bold flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{validationError}</span>
+            </div>
+          )}
+
           <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-600 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
             <span>
@@ -188,17 +217,28 @@ export const TransferToConsignmentModal: React.FC<TransferToConsignmentModalProp
           <div className="flex items-center justify-end space-x-2 space-x-reverse pt-2 border-t border-slate-100">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
             >
               انصراف
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center space-x-1.5 space-x-reverse"
+              disabled={isSubmitting}
+              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center space-x-1.5 space-x-reverse"
             >
-              <Handshake className="w-4 h-4" />
-              <span>ثبت و خروج امانی کالا</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>در حال ثبت و انتقال...</span>
+                </>
+              ) : (
+                <>
+                  <Handshake className="w-4 h-4" />
+                  <span>ثبت و خروج امانی کالا</span>
+                </>
+              )}
             </button>
           </div>
         </form>

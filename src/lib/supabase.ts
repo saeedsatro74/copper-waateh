@@ -233,6 +233,233 @@ export async function saveRemoteInventory(state: InventoryState): Promise<{
       }
     }
 
+    // 3. Mirror Pallets
+    if (state.pallets && Array.isArray(state.pallets)) {
+      try {
+        const mapped = state.pallets.map((p) => ({
+          id: p.id,
+          pallet_code: p.palletCode,
+          brand: p.brand,
+          thickness: p.thickness,
+          diameter: p.diameter,
+          reels: p.reels || [],
+          entry_date: p.entryDate,
+          location: p.location,
+          status: p.status,
+          purchaser: p.purchaser || null,
+          notes: p.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('pallets').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Pallets table mirror error:', err);
+      }
+    }
+
+    // 4. Mirror Standalone Reels
+    if (state.reels && Array.isArray(state.reels)) {
+      try {
+        const mapped = state.reels.map((r) => ({
+          id: r.id,
+          reel_code: r.reelCode,
+          brand: r.brand,
+          thickness: r.thickness,
+          diameter: r.diameter,
+          weight_kg: r.weightKg,
+          origin_pallet_code: r.originPalletCode || null,
+          entry_date: r.entryDate,
+          location: r.location,
+          purchaser: r.purchaser || null,
+          notes: r.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('reels').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Reels table mirror error:', err);
+      }
+    }
+
+    // 5. Mirror Coils
+    if (state.coils && Array.isArray(state.coils)) {
+      try {
+        const mapped = state.coils.map((c) => ({
+          id: c.id,
+          code: c.code,
+          brand: c.brand,
+          thickness: c.thickness,
+          diameter: c.diameter,
+          weight_kg: c.weightKg,
+          entry_date: c.entryDate,
+          location: c.location,
+          purchaser: c.purchaser || null,
+          notes: c.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('coils').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Coils table mirror error:', err);
+      }
+    }
+
+    // 6. Mirror Branches
+    if (state.branches && Array.isArray(state.branches)) {
+      try {
+        const mapped = state.branches.map((b) => ({
+          id: b.id,
+          code: b.code,
+          brand: b.brand,
+          thickness: b.thickness,
+          diameter: b.diameter,
+          weight_kg: b.totalWeightKg,
+          branch_count: b.count,
+          branch_length_m: b.lengthMeters,
+          entry_date: b.entryDate,
+          location: b.location,
+          purchaser: b.purchaser || null,
+          notes: b.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('branches').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Branches table mirror error:', err);
+      }
+    }
+
+    // 7. Mirror Loose Items
+    if (state.loose && Array.isArray(state.loose)) {
+      try {
+        const mapped = state.loose.map((l) => ({
+          id: l.id,
+          code: l.code,
+          brand: l.brand,
+          thickness: l.thickness,
+          diameter: l.diameter,
+          weight_kg: l.weightKg,
+          source: l.originType || 'direct_entry',
+          origin_item_code: l.description || null,
+          entry_date: l.entryDate,
+          purchaser: l.purchaser || null,
+          notes: l.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('loose_items').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Loose items table mirror error:', err);
+      }
+    }
+
+    // 8. Mirror Invoices
+    if (state.invoices && Array.isArray(state.invoices)) {
+      try {
+        const mapped = state.invoices.map((i) => ({
+          id: i.id,
+          invoice_number: i.invoiceNumber,
+          date: i.date,
+          customer_name: i.customerName,
+          customer_phone: i.customerPhone || null,
+          customer_address: i.customerAddress || null,
+          items: i.items || [],
+          total_weight_kg: i.totalWeightKg,
+          total_amount: i.totalAmount,
+          status: i.status,
+          type: i.type || 'exit',
+          notes: i.notes || null,
+          payment_allocation: i.paymentAllocation || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('invoices').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Invoices table mirror error:', err);
+      }
+    }
+
+    // 9. Mirror Transactions
+    if (state.transactions && Array.isArray(state.transactions)) {
+      try {
+        const mapped = state.transactions.map((t) => {
+          // Parse timestamp string to unix epoch, or default to now
+          let unixTimestamp = Date.now();
+          try {
+            if (t.timestamp) {
+              const parsed = Date.parse(t.timestamp);
+              if (!isNaN(parsed)) unixTimestamp = parsed;
+            }
+          } catch (e) {}
+
+          return {
+            id: t.id,
+            timestamp: unixTimestamp,
+            date: t.timestamp ? t.timestamp.split('T')[0] : null,
+            time: t.timestamp ? t.timestamp.split(' ')[1] || null : null,
+            type: t.type,
+            item_id: null,
+            item_code: t.invoiceNumber || null,
+            item_type: t.category,
+            weight_kg: t.totalWeightKg,
+            source: t.buyerOrSupplier || null,
+            destination: null,
+            performed_by: t.registeredBy,
+            notes: t.details || null,
+          };
+        });
+        if (mapped.length > 0) {
+          await client.from('transactions').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Transactions table mirror error:', err);
+      }
+    }
+
+    // 10. Mirror Consignments
+    if (state.consignments && Array.isArray(state.consignments)) {
+      try {
+        const mapped = state.consignments.map((c) => ({
+          id: c.id,
+          recipient_name: c.recipientName,
+          recipient_phone: c.recipientPhone || null,
+          date: c.issueDate,
+          expected_return_date: c.expectedReturnDate || null,
+          items: c.items || [],
+          total_weight_kg: c.totalWeightKg,
+          status: c.status,
+          unit_price: c.unitPrice || null,
+          notes: c.notes || null,
+        }));
+        if (mapped.length > 0) {
+          await client.from('consignments').upsert(mapped, { onConflict: 'id' });
+        }
+      } catch (err) {
+        console.warn('Consignments table mirror error:', err);
+      }
+    }
+
+    // 11. Mirror Warehouse Profile
+    if (state.warehouseProfile) {
+      try {
+        const p = state.warehouseProfile;
+        const mapped = {
+          id: 'main_profile',
+          name: p.name,
+          manager_name: p.managerName,
+          phone: p.phone,
+          address: p.address,
+          tax_number: null,
+          partner_info: p.partnerInfo || null,
+          unit_settings: p.unitSettings || null,
+          brands: p.brands || null,
+        };
+        await client.from('warehouse_profile').upsert(mapped, { onConflict: 'id' });
+      } catch (err) {
+        console.warn('Warehouse profile table mirror error:', err);
+      }
+    }
+
     return { success: true };
   } catch (err: any) {
     console.warn('Error saving to Supabase:', err);

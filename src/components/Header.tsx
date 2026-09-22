@@ -17,6 +17,9 @@ import {
   Calculator,
   Handshake,
   Coins,
+  Cloud,
+  CloudOff,
+  Loader2,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { User } from '../types';
@@ -41,12 +44,18 @@ export const Header: React.FC<HeaderProps> = ({
   const {
     state,
     currentUser,
+    logout,
     canUndo,
     canRedo,
     undo,
     redo,
     setCurrentUser,
     selectedItems,
+    isCloudConnected,
+    isCloudSyncing,
+    isOperationLoading,
+    lastActionDescription,
+    syncNowWithCloud,
   } = useInventory();
 
   const isManager = currentUser?.role === 'manager';
@@ -75,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Center Actions: UNDO / REDO System */}
+          {/* Center Actions: UNDO / REDO System & Realtime Sync Status */}
           <div className="flex items-center space-x-1 sm:space-x-2 space-x-reverse bg-slate-100 p-1 sm:p-1.5 rounded-xl border border-slate-200 shrink-0">
             <button
               onClick={undo}
@@ -103,6 +112,37 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Redo2 className="w-3.5 h-3.5 text-amber-600" />
               <span className="hidden md:inline">انجام مجدد (Redo)</span>
+            </button>
+
+            {/* Cloud & Save Status */}
+            <button
+              onClick={syncNowWithCloud}
+              disabled={isCloudSyncing || isOperationLoading}
+              title={isCloudConnected ? "دیتابیس ابری متصل و همگام است - کلیک برای همگام‌سازی فوری" : "همگام‌سازی محلی / ابری"}
+              className={`flex items-center space-x-1 space-x-reverse px-2 py-1 sm:py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                isCloudSyncing || isOperationLoading
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse'
+                  : isCloudConnected
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 cursor-pointer'
+                  : 'bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer'
+              }`}
+            >
+              {isCloudSyncing || isOperationLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                  <span className="hidden lg:inline text-[10px]">در حال ذخیره...</span>
+                </>
+              ) : isCloudConnected ? (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="hidden lg:inline text-[10px] font-bold">ابری همگام</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden lg:inline text-[10px]">ذخیره محلی</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -193,16 +233,27 @@ export const Header: React.FC<HeaderProps> = ({
                       ))}
                     </div>
 
-                    <div className="border-t border-slate-100 pt-1 mt-1">
+                    <div className="border-t border-slate-100 pt-1 mt-1 space-y-0.5">
                       <button
                         onClick={() => {
                           setUserDropdownOpen(false);
                           onOpenLoginModal();
                         }}
-                        className="w-full text-right px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 space-x-reverse"
+                        className="w-full text-right px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center space-x-2 space-x-reverse cursor-pointer"
                       >
                         <UserIcon className="w-3.5 h-3.5 text-slate-500" />
                         <span>ورود با حساب دیگر</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          logout();
+                        }}
+                        className="w-full text-right px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 flex items-center space-x-2 space-x-reverse cursor-pointer font-bold"
+                      >
+                        <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                        <span>خروج از حساب</span>
                       </button>
                     </div>
                   </div>
@@ -285,18 +336,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>پیش‌فاکتورها و خروج</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('consignments')}
-              className={`flex items-center space-x-1.5 space-x-reverse px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                activeTab === 'consignments'
-                  ? 'bg-white text-amber-700 shadow-xs border border-amber-200'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-              }`}
-            >
-              <Handshake className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>لیست امانی‌ها</span>
             </button>
 
             {isManager && (
