@@ -1,0 +1,6 @@
+{
+  "name": "سامانه انبار مس باهنر و قائم",
+  "description": "سامانه مدیریت موجودی انبار مس، کنترل پالت‌ها، قرقره‌ها، کلاف‌ها، شاخه‌ها و خورده‌فروشی همراه با ثبت ورود/خروج و صدور پیش‌فاکتور",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
