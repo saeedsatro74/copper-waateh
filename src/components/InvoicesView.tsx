@@ -28,9 +28,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [invoiceToAllocate, setInvoiceToAllocate] = useState<Invoice | null>(null);
 
-  const handleConfirmAllocation = (allocation: PaymentAllocation) => {
+  const handleConfirmAllocation = (
+    allocation: PaymentAllocation,
+    chequeList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+  ) => {
     if (invoiceToAllocate) {
-      confirmOfficialExitInvoice(invoiceToAllocate.id, allocation);
+      confirmOfficialExitInvoice(invoiceToAllocate.id, allocation, chequeList);
       setInvoiceToAllocate(null);
     }
   };

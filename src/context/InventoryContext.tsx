@@ -80,15 +80,17 @@ interface InventoryContextType {
     pricePerKg: number,
     notes: string,
     customInvoiceNum?: string,
-    itemPricesMap?: Record<string, number>,
-    cashAmount?: number,
-    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+    itemPricesMap?: Record<string, number>
   ) => Invoice;
   
   clearCheque: (chequeId: string) => void;
   
   cancelInvoiceAndReturnToStock: (invoiceId: string, reason?: string) => void;
-  confirmOfficialExitInvoice: (invoiceId: string, allocation?: PaymentAllocation) => void;
+  confirmOfficialExitInvoice: (
+    invoiceId: string,
+    allocation?: PaymentAllocation,
+    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+  ) => void;
 
   // Consignment Operations
   transferToConsignment: (
@@ -1148,9 +1150,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     pricePerKg: number,
     notes: string,
     customInvoiceNum?: string,
-    itemPricesMap?: Record<string, number>,
-    cashAmount?: number,
-    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+    itemPricesMap?: Record<string, number>
   ): Invoice => {
     let updatedPallets = [...state.pallets];
     let updatedReels = [...state.reels];
@@ -1316,9 +1316,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
 
     const newAdjustments = [...(state.balanceAdjustments || [])];
-    const totalChequesAmount = chequesList ? chequesList.reduce((s, ch) => s + ch.amount, 0) : 0;
-    const actualCashPaid = Math.max(0, totalAmount - totalChequesAmount);
-    const cashRatio = totalAmount > 0 ? (actualCashPaid / totalAmount) : 1;
 
     // Deduct weight and add immediate cash portion to each owner's account
     (['partner1', 'partner2', 'shared'] as const).forEach((accKey) => {
@@ -1334,9 +1331,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const currentAcc = { ...(updatedPartnerInfo[accField] || { initialCash: 0, initialCopperKg: 0 }) };
         const prevCash = currentAcc.initialCash || 0;
         
-        // Only deposit the actual immediate cash portion
-        const cashDepositAmount = Math.round(ded.amount * cashRatio);
-        const newCash = prevCash + cashDepositAmount;
+        const newCash = prevCash + ded.amount;
         currentAcc.initialCash = newCash;
 
         const prevCopper = currentAcc.initialCopperKg || 0;
@@ -1352,37 +1347,16 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           accountName: ded.purchaserName,
           assetType: 'cash',
           operation: 'deposit',
-          amount: cashDepositAmount,
+          amount: ded.amount,
           previousAmount: prevCash,
           newAmount: newCash,
-          notes: `افزایش نقدی بابت فروش در فاکتور ${invoiceNum} (${ded.weightKg.toLocaleString('fa-IR')} کیلوگرم مس با فی کل، بخش نقدی دریافتی: ${formatToman(cashDepositAmount)}${totalChequesAmount > 0 ? ` و مابقی با چک به مبلغ ${formatToman(ded.amount - cashDepositAmount)}` : ''})`,
+          notes: `افزایش نقدی بابت فروش در فاکتور ${invoiceNum} (${ded.weightKg.toLocaleString('fa-IR')} کیلوگرم مس با فی کل: ${formatToman(ded.amount)})`,
           date: getPersianDateString(),
           time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
           registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
         });
       }
     });
-
-    // Create Cheque Records if any
-    const newChequeRecords: Cheque[] = [];
-    if (chequesList && chequesList.length > 0) {
-      // Find the main partner account that sold item(s) to assign the cheque to
-      const mainAccKey = (['partner1', 'partner2', 'shared'] as const).find((k) => partnerDeductions[k].amount > 0) || 'shared';
-      
-      chequesList.forEach((ch, idx) => {
-        newChequeRecords.push({
-          id: `chq-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
-          amount: ch.amount,
-          chequeNumber: ch.chequeNumber,
-          dueDate: ch.dueDate,
-          bankName: ch.bankName,
-          isCleared: false,
-          partnerAccount: mainAccKey,
-          invoiceNumber: invoiceNum,
-          customerName: customerName || 'مشتری متفرقه',
-        });
-      });
-    }
 
     const newInvoice: Invoice = {
       id: `inv-${Date.now()}`,
@@ -1417,13 +1391,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
       userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
       timestamp: getPersianDateTimeString(),
-      details: `صدور پیش‌فاکتور برای ${customerName} به وزن کل ${totalWeight} کیلوگرم. نقدی: ${formatToman(actualCashPaid)} | چک: ${formatToman(totalChequesAmount)}.`,
+      details: `صدور پیش‌فاکتور برای ${customerName} به وزن کل ${totalWeight} کیلوگرم.`,
       pricePerKg: pricePerKg,
       totalPrice: totalAmount,
       itemSummaries: itemSummaries,
     };
-
-    const finalCheques = [...(state.cheques || []), ...newChequeRecords];
 
     const nextState = {
       ...state,
@@ -1439,7 +1411,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       loose: updatedLoose,
       invoices: [newInvoice, ...state.invoices],
       transactions: [newTx, ...state.transactions],
-      cheques: finalCheques,
     };
 
     updatePresentState(nextState);
@@ -1605,7 +1576,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   // Confirm Final Exit and Issue Official Invoice
-  const confirmOfficialExitInvoice = (invoiceId: string, allocation?: PaymentAllocation) => {
+  const confirmOfficialExitInvoice = (
+    invoiceId: string,
+    allocation?: PaymentAllocation,
+    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+  ) => {
     const inv = state.invoices.find((i) => i.id === invoiceId);
     if (!inv || inv.status === 'official' || inv.status === 'cancelled') return;
 
@@ -1629,6 +1604,76 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const p2Str = allocation.partner2Amount > 0 ? `${p2Name}: ${allocation.partner2Amount.toLocaleString('fa-IR')} تومان` : '';
       const shStr = allocation.sharedAmount > 0 ? `حساب مشترک: ${allocation.sharedAmount.toLocaleString('fa-IR')} تومان` : '';
       detailsMsg += ` واریز وجه: ${[p1Str, p2Str, shStr].filter(Boolean).join(' - ')}. روش تسویه: ${allocation.paymentMethod}. دریافتی: ${paidAmt.toLocaleString('fa-IR')} تومان. مانده بدهی: ${remAmt.toLocaleString('fa-IR')} تومان.`;
+    }
+
+    // Capture partner accounts adjustments and create Cheque items if there are any cheques
+    let updatedPartnerInfo = state.warehouseProfile.partnerInfo
+      ? { ...state.warehouseProfile.partnerInfo }
+      : undefined;
+    const newAdjustments = [...(state.balanceAdjustments || [])];
+    const newChequeRecords: Cheque[] = [];
+
+    const totalChequesAmount = chequesList ? chequesList.reduce((s, c) => s + c.amount, 0) : 0;
+
+    if (totalChequesAmount > 0 && updatedPartnerInfo) {
+      // Find whose account originally issued the goods in this invoice so we deduct the cheque portion from their cash balance
+      const p1Name = updatedPartnerInfo.partner1Name || 'شریک اول';
+      const p2Name = updatedPartnerInfo.partner2Name || 'شریک دوم';
+
+      // Find the main purchaser (who originally got the cash deposit in processStockExitInvoice)
+      const firstItemPurchaser = inv.items[0]?.purchaser || 'حساب مشترک';
+      let mainAccKey: 'partner1' | 'partner2' | 'shared' = 'shared';
+      if (firstItemPurchaser === p1Name || firstItemPurchaser.includes('اول') || firstItemPurchaser.includes('مدیر ۱')) {
+        mainAccKey = 'partner1';
+      } else if (firstItemPurchaser === p2Name || firstItemPurchaser.includes('دوم') || firstItemPurchaser.includes('مدیر ۲')) {
+        mainAccKey = 'partner2';
+      }
+
+      const accField =
+        mainAccKey === 'partner1'
+          ? 'partner1Account'
+          : mainAccKey === 'partner2'
+          ? 'partner2Account'
+          : 'sharedAccount';
+
+      const currentAcc = { ...(updatedPartnerInfo[accField] || { initialCash: 0, initialCopperKg: 0 }) };
+      const prevCash = currentAcc.initialCash || 0;
+      
+      // Deduct the cheque amount from cash balance because it is now a cheque, not cash!
+      const newCash = Math.max(0, prevCash - totalChequesAmount);
+      currentAcc.initialCash = newCash;
+      updatedPartnerInfo[accField] = currentAcc;
+
+      // Add deduction balance adjustment record
+      newAdjustments.unshift({
+        id: `adj-exit-chq-${Date.now()}`,
+        targetAccount: mainAccKey,
+        accountName: firstItemPurchaser,
+        assetType: 'cash',
+        operation: 'withdrawal',
+        amount: totalChequesAmount,
+        previousAmount: prevCash,
+        newAmount: newCash,
+        notes: `کاهش نقدی بابت تبدیل بخشی از مبلغ فروش فاکتور ${officialNum} به چک سررسید‌دار به مبلغ کل ${formatToman(totalChequesAmount)}`,
+        date: getPersianDateString(),
+        time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+        registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      });
+
+      // Create cheque records
+      chequesList?.forEach((ch, idx) => {
+        newChequeRecords.push({
+          id: `chq-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+          amount: ch.amount,
+          chequeNumber: ch.chequeNumber,
+          dueDate: ch.dueDate,
+          bankName: ch.bankName,
+          isCleared: false,
+          partnerAccount: mainAccKey,
+          invoiceNumber: officialNum,
+          customerName: inv.customerName || 'مشتری متفرقه',
+        });
+      });
     }
 
     const updatedInvoices = state.invoices.map((i) =>
@@ -1657,18 +1702,34 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
       userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
       timestamp: getPersianDateTimeString(),
-      details: detailsMsg,
+      details: detailsMsg + (totalChequesAmount > 0 ? ` (تعداد ${chequesList?.length} فقره چک به مبلغ کل ${formatToman(totalChequesAmount)} ثبت گردید)` : ''),
       totalPrice: inv.totalAmount,
       paymentAllocation: allocation,
     };
 
-    updatePresentState({
+    const nextState = {
       ...state,
+      warehouseProfile: {
+        ...state.warehouseProfile,
+        partnerInfo: updatedPartnerInfo || state.warehouseProfile.partnerInfo,
+      },
+      balanceAdjustments: newAdjustments,
       invoices: updatedInvoices,
       transactions: [newTx, ...state.transactions],
-    });
+      cheques: [...(state.cheques || []), ...newChequeRecords],
+    };
+
+    updatePresentState(nextState);
 
     showToast(`خروج قطعی و فاکتور رسمی ${officialNum} تأیید گردید.`, 'success');
+
+    // Sync remote
+    const config = getSupabaseConfig();
+    if (config.isConfigured) {
+      saveRemoteInventory(nextState).catch((err) => {
+        console.warn('Error syncing official invoice to Supabase:', err);
+      });
+    }
   };
 
   // Consignment Operations

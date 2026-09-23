@@ -11,12 +11,16 @@ import {
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { Invoice, PaymentAllocation } from '../types';
+import { formatToman } from '../utils/persian';
 
 interface PaymentAllocationModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoice: Invoice | null;
-  onConfirm: (allocation: PaymentAllocation) => void;
+  onConfirm: (
+    allocation: PaymentAllocation,
+    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+  ) => void;
 }
 
 export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
@@ -50,6 +54,13 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
 
   const [trackingNumber, setTrackingNumber] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Cheques inputs states
+  const [chequeList, setChequeList] = useState<{ amount: number; chequeNumber: string; dueDate: string; bankName: string }[]>([]);
+  const [newChequeAmt, setNewChequeAmt] = useState<string>('');
+  const [newChequeNum, setNewChequeNum] = useState<string>('');
+  const [newChequeDue, setNewChequeDue] = useState<string>('');
+  const [newChequeBank, setNewChequeBank] = useState<string>('');
 
   // Update defaults when modal opens for invoice
   useEffect(() => {
@@ -117,7 +128,7 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
       paidAt: new Date().toLocaleDateString('fa-IR'),
     };
 
-    onConfirm(allocation);
+    onConfirm(allocation, chequeList);
     onClose();
   };
 
@@ -326,6 +337,166 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
               placeholder="مثلا: واریز نقدی ۵۰ میلیون به شریک اول و مابقی به شریک دوم"
               className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
+          </div>
+
+          {/* بخش ثبت چک‌های دریافتی فاکتور */}
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4 text-right">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2 flex-wrap gap-2">
+              <h3 className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
+                ثبت چک‌های دریافتی از مشتری برای فاکتور رسمی
+              </h3>
+              <span className="text-[10px] text-slate-500 font-medium">
+                (مبلغ چک‌ها از موجودی نقدی شریک کسر می‌شود)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* خلاصه پرداخت‌ها */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                  <span>کل مبلغ فاکتور:</span>
+                  <span className="text-slate-900">{formatToman(totalAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs font-bold text-emerald-600 bg-emerald-50/50 p-1.5 rounded-lg">
+                  <span>مبلغ پرداخت نقدی (واریزی):</span>
+                  <span>
+                    {formatToman(
+                      Math.max(0, (paidAmountInput || 0) - chequeList.reduce((s, c) => s + c.amount, 0))
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-xs font-bold text-amber-700 bg-amber-50/50 p-1.5 rounded-lg">
+                  <span>مجموع چک‌های ثبت شده:</span>
+                  <span>
+                    {formatToman(chequeList.reduce((s, c) => s + c.amount, 0))}
+                  </span>
+                </div>
+              </div>
+
+              {/* فرم سریع افزودن چک جدید */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-3">
+                <h4 className="text-[11px] font-extrabold text-amber-800">
+                  + ثبت مشخصات چک جدید:
+                </h4>
+                
+                <div className="grid grid-cols-2 gap-2 text-right">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">مبلغ چک (تومان):</label>
+                    <input
+                      type="number"
+                      placeholder="مثلاً: ۲۰۰۰۰۰۰"
+                      value={newChequeAmt}
+                      onChange={(e) => setNewChequeAmt(e.target.value)}
+                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">شماره چک / صیاد:</label>
+                    <input
+                      type="text"
+                      placeholder="مثلاً: ۱۲۳۴۵۶"
+                      value={newChequeNum}
+                      onChange={(e) => setNewChequeNum(e.target.value)}
+                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">بانک صادرکننده:</label>
+                    <input
+                      type="text"
+                      placeholder="مثلاً: ملی"
+                      value={newChequeBank}
+                      onChange={(e) => setNewChequeBank(e.target.value)}
+                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">تاریخ سررسید چک:</label>
+                    <input
+                      type="text"
+                      placeholder="مثلاً: ۱۴۰۳/۰۹/۱۵"
+                      value={newChequeDue}
+                      onChange={(e) => setNewChequeDue(e.target.value)}
+                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 text-center focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const amt = Number(newChequeAmt);
+                    if (!amt || amt <= 0 || !newChequeNum.trim() || !newChequeDue.trim()) {
+                      alert('لطفاً اطلاعات چک را به طور کامل وارد نمایید.');
+                      return;
+                    }
+                    const totalChequesAmount = chequeList.reduce((s, c) => s + c.amount, 0) + amt;
+                    if (totalChequesAmount > totalAmount) {
+                      alert('خطا: مجموع مبالغ چک‌ها نمی‌تواند بیشتر از مبلغ کل فاکتور باشد!');
+                      return;
+                    }
+                    setChequeList((prev) => [
+                      ...prev,
+                      {
+                        amount: amt,
+                        chequeNumber: newChequeNum.trim(),
+                        dueDate: newChequeDue.trim(),
+                        bankName: newChequeBank.trim() || 'نامشخص',
+                      },
+                    ]);
+                    setNewChequeAmt('');
+                    setNewChequeNum('');
+                    setNewChequeDue('');
+                    setNewChequeBank('');
+                  }}
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-lg text-[11px] transition-colors cursor-pointer"
+                >
+                  ثبت و افزودن چک به فاکتور رسمی
+                </button>
+              </div>
+            </div>
+
+            {/* لیست چک‌های افزوده شده */}
+            {chequeList.length > 0 && (
+              <div className="bg-white p-3 rounded-xl border border-slate-200/80">
+                <h4 className="text-[11px] font-extrabold text-slate-700 mb-2">لیست چک‌های افزوده شده به این فاکتور:</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400">
+                        <th className="pb-1.5 font-bold text-slate-500">شماره چک</th>
+                        <th className="pb-1.5 font-bold text-slate-500">بانک</th>
+                        <th className="pb-1.5 font-bold text-slate-500">تاریخ سررسید</th>
+                        <th className="pb-1.5 font-bold text-slate-500">مبلغ (تومان)</th>
+                        <th className="pb-1.5 font-bold text-center text-slate-500">حذف</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700 font-bold">
+                      {chequeList.map((ch, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="py-2">{ch.chequeNumber}</td>
+                          <td className="py-2">{ch.bankName}</td>
+                          <td className="py-2 text-slate-600">{ch.dueDate}</td>
+                          <td className="py-2 text-amber-600">{formatToman(ch.amount)}</td>
+                          <td className="py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChequeList((prev) => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="p-1 hover:bg-red-50 text-red-500 hover:text-red-700 rounded-lg transition-colors cursor-pointer"
+                            >
+                              حذف
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Buttons */}
