@@ -182,7 +182,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                     }}
                     className={`p-2 rounded-xl text-xs font-bold transition-all border text-center cursor-pointer ${
                       isSelected
-                        ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-500/30'
+                        ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-600/30 font-black'
                         : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
@@ -196,7 +196,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                 onClick={() => setIsCustomDiameter(true)}
                 className={`p-2 rounded-xl text-xs font-bold transition-all border text-center cursor-pointer ${
                   isCustomDiameter
-                    ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-500/30'
+                    ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-600/30 font-black'
                     : 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200'
                 }`}
               >
@@ -263,7 +263,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                     }}
                     className={`p-2 rounded-xl text-xs font-bold transition-all border text-center cursor-pointer ${
                       isSelected
-                        ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-500/30'
+                        ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-600/30 font-black'
                         : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
@@ -277,7 +277,7 @@ export const CalculatorModal: React.FC<CalculatorModalProps> = ({
                 onClick={() => setIsCustomThickness(true)}
                 className={`p-2 rounded-xl text-xs font-bold transition-all border text-center cursor-pointer ${
                   isCustomThickness
-                    ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-500/30'
+                    ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-600/30 font-black'
                     : 'bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200'
                 }`}
               >
