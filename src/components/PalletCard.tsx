@@ -38,6 +38,8 @@ export const PalletCard: React.FC<PalletCardProps> = ({
       thickness: pallet.thickness,
       diameter: pallet.diameter,
       weightKg: weightKg,
+      purchaser: pallet.purchaser,
+      buyPricePerKg: pallet.buyPricePerKg,
       description: `قرقره ${serialNo} (از پالت ${pallet.palletCode})`,
     };
     toggleSelectItem(itemToToggle);

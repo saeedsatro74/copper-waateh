@@ -5,10 +5,11 @@ import {
   Wallet,
   TrendingUp,
   PlusCircle,
-  ArrowUpRight,
-  ArrowDownLeft,
   Coins,
   Scale,
+  Eye,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { AdjustBalanceModal } from './AdjustBalanceModal';
@@ -17,16 +18,6 @@ import { Invoice } from '../types';
 
 interface PartnerPanelsViewProps {
   onViewInvoice?: (invoice: Invoice) => void;
-}
-
-interface LedgerItem {
-  id: string;
-  date: string;
-  type: 'واریز/برداشت نقدی' | 'دریافت سهم فروش' | 'خرید مس';
-  description: string;
-  amountText: string;
-  effect: 'plus' | 'minus';
-  category: 'cash' | 'copper';
 }
 
 export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvoice }) => {
@@ -39,29 +30,59 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
   const [modalDefaultAccount, setModalDefaultAccount] = useState<'partner1' | 'partner2' | 'shared'>('partner1');
 
   const partnerInfo = state.warehouseProfile.partnerInfo;
-  const p1Name = partnerInfo?.partner1Name || 'شریک اول';
-  const p2Name = partnerInfo?.partner2Name || 'شریک دوم';
-
-  // Base buy price per kg for company profit estimation (default 3,200,000 Toman)
-  const [baseBuyPricePerKg, setBaseBuyPricePerKg] = useState<number>(3200000);
-
-  // Official sales calculations
-  const officialInvoices = state.invoices.filter((i) => i.status === 'official' && i.type === 'exit');
-  const officialSalesAmount = officialInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
-  const officialWeightKg = officialInvoices.reduce((acc, inv) => acc + inv.totalWeightKg, 0);
-
-  // Net Company Profit
-  const totalPurchaseCost = officialWeightKg * baseBuyPricePerKg;
-  const companyNetProfit = officialSalesAmount - totalPurchaseCost;
-  const partner1ProfitShare = (companyNetProfit * (partnerInfo?.partner1SharePercent || 50)) / 100;
-  const partner2ProfitShare = (companyNetProfit * (partnerInfo?.partner2SharePercent || 50)) / 100;
+  const p1Name = partnerInfo?.partner1Name || 'شریک اول (مدیر ۱)';
+  const p2Name = partnerInfo?.partner2Name || 'شریک دوم (مدیر ۲)';
+  const p1SharePercent = partnerInfo?.partner1SharePercent ?? 50;
+  const p2SharePercent = partnerInfo?.partner2SharePercent ?? 50;
 
   const openAdjustModal = (acc: 'partner1' | 'partner2' | 'shared') => {
     setModalDefaultAccount(acc);
     setIsAdjustModalOpen(true);
   };
 
-  // Helper calculations for each partner/account:
+  // Helper to accurately calculate invoice cost and profit: (Sale Price - Buy Price)
+  const getInvoiceMetrics = (inv: Invoice) => {
+    let cost = 0;
+    if (inv.totalCost && inv.totalCost > 0) {
+      cost = inv.totalCost;
+    } else if (inv.items && inv.items.length > 0) {
+      cost = inv.items.reduce((s, it) => {
+        const buyPrice = (it.buyPricePerKg && it.buyPricePerKg > 0) ? it.buyPricePerKg : 680000;
+        return s + Math.round(it.weightKg * buyPrice);
+      }, 0);
+    } else {
+      cost = Math.round(inv.totalWeightKg * 680000);
+    }
+
+    const saleAmount = inv.totalAmount || 0;
+    const profit = (inv.totalProfit !== undefined && inv.totalProfit !== null && !isNaN(inv.totalProfit))
+      ? inv.totalProfit
+      : saleAmount - cost;
+
+    // Panel profit shares: (Sale Price - Buy Price) * Share %
+    const p1Profit = Math.round((profit * p1SharePercent) / 100);
+    const p2Profit = Math.round((profit * p2SharePercent) / 100);
+
+    return {
+      saleAmount,
+      cost,
+      profit,
+      weightKg: inv.totalWeightKg || 0,
+      p1Profit,
+      p2Profit,
+    };
+  };
+
+  // All active exit invoices
+  const activeExitInvoices = state.invoices.filter((i) => i.type === 'exit' && i.status !== 'cancelled');
+
+  // Total company net profit from actual sales
+  const companyTotalProfit = activeExitInvoices.reduce((s, inv) => s + getInvoiceMetrics(inv).profit, 0);
+
+  const p1TotalProfit = Math.round((companyTotalProfit * p1SharePercent) / 100);
+  const partner2TotalProfit = Math.round((companyTotalProfit * p2SharePercent) / 100);
+
+  // Helper calculations for each partner/account
   const getAccountData = (acc: 'partner1' | 'partner2' | 'shared') => {
     const accName = acc === 'partner1' ? p1Name : acc === 'partner2' ? p2Name : 'حساب مشترک';
     const storedData =
@@ -74,35 +95,18 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
     const initialCash = storedData?.initialCash || 0;
     const initialCopperKg = storedData?.initialCopperKg || 0;
 
-    // Cash received from official invoices
-    let invoiceCash = 0;
-    const allocatedInvoices: { invoice: Invoice; allocatedAmount: number }[] = [];
-
-    state.invoices.forEach((inv) => {
-      if (inv.status === 'official' && inv.paymentAllocation) {
-        const allocated =
-          acc === 'partner1'
-            ? inv.paymentAllocation.partner1Amount || 0
-            : acc === 'partner2'
-            ? inv.paymentAllocation.partner2Amount || 0
-            : inv.paymentAllocation.sharedAmount || 0;
-
-        if (allocated > 0) {
-          invoiceCash += allocated;
-          allocatedInvoices.push({ invoice: inv, allocatedAmount: allocated });
-        }
-      }
-    });
-
-    // Copper stock items currently owned by this purchaser in inventory
-    let stockCopperKg = 0;
-
     const isMatch = (purchaser?: string) => {
-      if (acc === 'partner1') return purchaser === p1Name;
-      if (acc === 'partner2') return purchaser === p2Name;
+      if (acc === 'partner1') {
+        return purchaser === p1Name || (purchaser?.includes('اول') ?? false) || (purchaser?.includes('مدیر ۱') ?? false);
+      }
+      if (acc === 'partner2') {
+        return purchaser === p2Name || (purchaser?.includes('دوم') ?? false) || (purchaser?.includes('مدیر ۲') ?? false);
+      }
       return !purchaser || purchaser === 'حساب مشترک' || purchaser.includes('مشترک');
     };
 
+    // Copper stock items currently physical in warehouse
+    let stockCopperKg = 0;
     state.pallets.forEach((p) => {
       if (isMatch(p.purchaser)) {
         stockCopperKg += p.reels.reduce((s, r) => s + r.weightKg, 0);
@@ -121,29 +125,27 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
       if (isMatch(l.purchaser)) stockCopperKg += l.weightKg;
     });
 
-    // Entry purchases recorded for this purchaser
-    const entryTransactions = state.transactions.filter(
-      (tx) => tx.type === 'entry' && isMatch(tx.purchaser)
-    );
+    // Profit share for this account
+    const profitShare =
+      acc === 'partner1'
+        ? p1TotalProfit
+        : acc === 'partner2'
+        ? partner2TotalProfit
+        : companyTotalProfit;
 
-    // Adjustments history
-    const adjustments = (state.balanceAdjustments || []).filter((adj) => adj.targetAccount === acc);
-
-    const totalCash = initialCash + invoiceCash;
-    const totalCopperKg = initialCopperKg + stockCopperKg;
+    // Total cash reflects initialCash (which receives deductions & entries)
+    const totalCash = initialCash;
+    const totalCopperKg = initialCopperKg > 0 ? initialCopperKg : stockCopperKg;
 
     return {
       accKey: acc,
       accName,
       initialCash,
       initialCopperKg,
-      invoiceCash,
       totalCash,
       stockCopperKg,
       totalCopperKg,
-      allocatedInvoices,
-      entryTransactions,
-      adjustments,
+      profitShare,
     };
   };
 
@@ -158,96 +160,50 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
       ? p2Data
       : sharedData;
 
-  const currentProfitShare =
+  const activeSharePercent =
     activePanel === 'partner1'
-      ? partner1ProfitShare
+      ? p1SharePercent
       : activePanel === 'partner2'
-      ? partner2ProfitShare
-      : 0;
-
-  // Build unified ledger list
-  const ledger: LedgerItem[] = [];
-
-  // Add adjustments
-  currentActiveData.adjustments.forEach((adj) => {
-    const isPlus = adj.operation === 'deposit';
-    ledger.push({
-      id: adj.id,
-      date: `${adj.date} ${adj.time || ''}`.trim(),
-      type: 'واریز/برداشت نقدی',
-      description: adj.notes || (isPlus ? 'افزایش موجودی دستی' : 'کاهش موجودی دستی'),
-      amountText: adj.assetType === 'cash' ? formatToman(adj.amount) : formatKg(adj.amount),
-      effect: adj.operation === 'withdraw' ? 'minus' : 'plus',
-      category: adj.assetType === 'cash' ? 'cash' : 'copper',
-    });
-  });
-
-  // Add allocated invoices
-  currentActiveData.allocatedInvoices.forEach(({ invoice, allocatedAmount }) => {
-    ledger.push({
-      id: `invoice-${invoice.id}`,
-      date: invoice.officialDate || invoice.date,
-      type: 'دریافت سهم فروش',
-      description: `دریافت سهم فروش فاکتور ${invoice.officialInvoiceNumber || invoice.invoiceNumber} (${invoice.customerName})`,
-      amountText: formatToman(allocatedAmount),
-      effect: 'plus',
-      category: 'cash',
-    });
-  });
-
-  // Add entry purchases
-  currentActiveData.entryTransactions.forEach((tx) => {
-    ledger.push({
-      id: `entry-${tx.id}`,
-      date: tx.timestamp,
-      type: 'خرید مس',
-      description: `خرید ${tx.title} از ${tx.buyerOrSupplier || 'تامین‌کننده'}`,
-      amountText: formatKg(tx.totalWeightKg),
-      effect: 'plus',
-      category: 'copper',
-    });
-  });
-
-  // Sort ledger by date descending
-  const sortedLedger = ledger.sort((a, b) => b.date.localeCompare(a.date));
+      ? p2SharePercent
+      : 100;
 
   return (
-    <div className="space-y-4 pb-16 text-right">
+    <div className="space-y-4 text-right">
       {/* 1. Account Selector Tabs at the VERY TOP */}
-      <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+      <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200">
         <button
           onClick={() => setActivePanel('partner1')}
-          className={`py-2 px-2 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-2 rounded-xl font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activePanel === 'partner1'
               ? 'bg-amber-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-950'
           }`}
         >
-          <User className="w-4 h-4" />
-          <span className="truncate">{p1Name}</span>
+          <User className="w-4 h-4 shrink-0" />
+          <span className="truncate">{p1Name} ({formatPersianNumber(p1SharePercent)}٪)</span>
         </button>
 
         <button
           onClick={() => setActivePanel('partner2')}
-          className={`py-2 px-2 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-2 rounded-xl font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activePanel === 'partner2'
               ? 'bg-amber-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-950'
           }`}
         >
-          <User className="w-4 h-4" />
-          <span className="truncate">{p2Name}</span>
+          <User className="w-4 h-4 shrink-0" />
+          <span className="truncate">{p2Name} ({formatPersianNumber(p2SharePercent)}٪)</span>
         </button>
 
         <button
           onClick={() => setActivePanel('shared')}
-          className={`py-2 px-2 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`py-2 px-2 rounded-xl font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             activePanel === 'shared'
               ? 'bg-amber-600 text-white shadow-sm'
               : 'text-slate-600 hover:text-slate-950'
           }`}
         >
-          <Building2 className="w-4 h-4" />
+          <Building2 className="w-4 h-4 shrink-0" />
           <span className="truncate">حساب مشترک</span>
         </button>
       </div>
@@ -260,27 +216,18 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
           </div>
           <div>
             <h2 className="text-xs font-black text-slate-800">
-              حساب کاربری: {currentActiveData.accName}
+              پنل حسابداری: {currentActiveData.accName}
             </h2>
+            <p className="text-[10px] text-slate-500 font-medium">
+              درصد سهم سود از فروش مس: {formatPersianNumber(activeSharePercent)}٪ | محاسبه سود: (قیمت فروش - قیمت خرید) × سهم
+            </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Rate input in a very small inline card */}
-          <div className="flex items-center gap-1 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-100 text-[10px]">
-            <span className="text-slate-500">نرخ پایه خرید مس:</span>
-            <input
-              type="number"
-              value={baseBuyPricePerKg}
-              onChange={(e) => setBaseBuyPricePerKg(Number(e.target.value) || 0)}
-              className="w-20 bg-white border border-slate-200 rounded text-center text-[10px] font-bold p-0.5 focus:outline-hidden"
-            />
-            <span className="text-slate-400">تومان</span>
-          </div>
-
           <button
             onClick={() => openAdjustModal(currentActiveData.accKey)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] cursor-pointer"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] cursor-pointer shadow-xs"
           >
             <PlusCircle className="w-3.5 h-3.5" />
             <span>ثبت/ویرایش نقدی</span>
@@ -288,130 +235,229 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
         </div>
       </div>
 
-      {/* 3. Compact Metrics Grid (No huge boxes) */}
-      <div className="grid grid-cols-3 gap-2.5">
+      {/* 3. Exactly THREE Metrics: Cash, Copper Stock, and Net Profit Share */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+        {/* Metric 1: Cash Balance */}
         <div className="bg-gradient-to-br from-amber-500 to-orange-600 text-white p-3.5 rounded-2xl shadow-xs space-y-0.5">
-          <span className="text-[10px] text-amber-100 flex items-center gap-1">
+          <span className="text-[10px] text-amber-100 flex items-center gap-1 font-bold">
             <Wallet className="w-3.5 h-3.5" />
-            <span>موجودی نقدی</span>
+            <span>موجودی نقدی حساب</span>
           </span>
           <span className="text-sm sm:text-base font-black block truncate text-left dir-ltr">
             {formatToman(currentActiveData.totalCash)}
           </span>
+          <span className="text-[9px] text-amber-100/90 block truncate">
+            (خرید کسر، فروش اضافه می‌شود)
+          </span>
         </div>
 
-        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-0.5">
-          <span className="text-[10px] text-slate-500 flex items-center gap-1">
+        {/* Metric 2: Copper in Stock */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-0.5 shadow-xs">
+          <span className="text-[10px] text-slate-500 flex items-center gap-1 font-bold">
             <Scale className="w-3.5 h-3.5 text-amber-600" />
             <span>موجودی مس انبار</span>
           </span>
           <span className="text-sm sm:text-base font-black block truncate text-slate-800 text-left dir-ltr">
             {formatKg(currentActiveData.totalCopperKg)}
           </span>
+          <span className="text-[9px] text-slate-400 block truncate">
+            کل مس فیزیکی موجود این پنل
+          </span>
         </div>
 
-        <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-0.5">
-          <span className="text-[10px] text-slate-500 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5 text-amber-600" />
-            <span>سهم سود خالص رسمی</span>
+        {/* Metric 3: Real Net Profit Share */}
+        <div className="bg-white p-3.5 rounded-2xl border border-slate-200 space-y-0.5 shadow-xs">
+          <span className="text-[10px] text-slate-500 flex items-center gap-1 font-bold">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+            <span>سود خالص این پنل</span>
           </span>
-          <span className={`text-sm sm:text-base font-black block truncate text-left dir-ltr ${currentProfitShare >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-            {activePanel === 'shared' ? 'فقط شرکا' : formatToman(currentProfitShare)}
+          <span className={`text-sm sm:text-base font-black block truncate text-left dir-ltr ${currentActiveData.profitShare >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+            {formatToman(currentActiveData.profitShare)}
+          </span>
+          <span className="text-[9px] text-slate-400 block truncate">
+            سهم سود {formatPersianNumber(activeSharePercent)}٪ از کل فروش‌های مس
           </span>
         </div>
       </div>
 
-      {/* 4. Unified Clean History Ledger (Perfect on Mobile & Desktop) */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="bg-slate-50/80 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
-          <span className="font-black text-xs text-slate-800">ریز کاردکس و تاریخچه حساب</span>
+      {/* 4. One Unified Table directly under the metrics */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden mt-2">
+        <div className="bg-slate-50/80 px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+            <span>جدول سود فاکتورهای فروش و سهم پنل {currentActiveData.accName}</span>
+          </span>
           <span className="text-[10px] text-slate-500 font-bold">
-            {formatPersianNumber(sortedLedger.length)} ردیف تراکنش ثبت شده
+            محاسبه دقیق سود: قیمت فروش منهای بهای خرید ضربدر درصد سهم ({formatPersianNumber(activeSharePercent)}٪)
           </span>
         </div>
 
-        {sortedLedger.length === 0 ? (
+        {activeExitInvoices.length === 0 ? (
           <div className="text-center py-12 text-slate-400 font-bold text-xs">
-            هیچ تراکنش یا تغییری برای این حساب ثبت نشده است.
+            هیچ فاکتور فروش فعالی در سیستم ثبت نشده است.
           </div>
         ) : (
           <div className="overflow-x-auto">
             {/* Desktop View Table */}
-            <table className="w-full text-right border-collapse text-xs hidden md:table">
+            <table className="w-full text-right border-collapse text-xs hidden lg:table">
               <thead>
-                <tr className="bg-slate-50/50 text-slate-500 font-bold border-b border-slate-200 text-[11px]">
-                  <th className="py-2.5 px-4 w-12 text-center">ردیف</th>
-                  <th className="py-2.5 px-4 w-40">تاریخ و ساعت</th>
-                  <th className="py-2.5 px-4 w-36">نوع رویداد</th>
-                  <th className="py-2.5 px-4">شرح تراکنش</th>
-                  <th className="py-2.5 px-4 w-36 text-left">مقدار دارایی</th>
+                <tr className="bg-slate-50/70 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
+                  <th className="py-2.5 px-3 w-10 text-center">#</th>
+                  <th className="py-2.5 px-3 w-28">شماره فاکتور</th>
+                  <th className="py-2.5 px-3 w-24">تاریخ</th>
+                  <th className="py-2.5 px-3">خریدار / مشتری</th>
+                  <th className="py-2.5 px-3 w-24 text-center">وزن مس</th>
+                  <th className="py-2.5 px-3 w-32 text-left">مبلغ کل فروش</th>
+                  <th className="py-2.5 px-3 w-32 text-left">بهای تمام‌شده خرید</th>
+                  <th className="py-2.5 px-3 w-32 text-left">سود کل فاکتور</th>
+                  <th className="py-2.5 px-3 w-32 text-left bg-emerald-50/50 text-emerald-800">سهم سود این پنل</th>
+                  <th className="py-2.5 px-3 w-24 text-center">وضعیت</th>
+                  <th className="py-2.5 px-3 w-16 text-center">مشاهده</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {sortedLedger.map((item, idx) => (
-                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-2.5 px-4 text-center font-bold text-slate-400">
-                      {formatPersianNumber(sortedLedger.length - idx)}
-                    </td>
-                    <td className="py-2.5 px-4 text-slate-500 font-medium whitespace-nowrap">
-                      {item.date}
-                    </td>
-                    <td className="py-2.5 px-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] ${
-                          item.effect === 'plus'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                            : 'bg-rose-50 text-rose-700 border border-rose-100'
-                        }`}
-                      >
-                        {item.effect === 'plus' ? (
-                          <ArrowDownLeft className="w-3 h-3 text-emerald-600" />
-                        ) : (
-                          <ArrowUpRight className="w-3 h-3 text-rose-600" />
+                {activeExitInvoices.map((inv, idx) => {
+                  const metrics = getInvoiceMetrics(inv);
+                  const panelShare =
+                    activePanel === 'partner1'
+                      ? metrics.p1Profit
+                      : activePanel === 'partner2'
+                      ? metrics.p2Profit
+                      : metrics.profit;
+
+                  return (
+                    <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-400">
+                        {formatPersianNumber(idx + 1)}
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">
+                        {inv.officialInvoiceNumber || inv.invoiceNumber}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                        {inv.officialDate || inv.date}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">
+                        {inv.customerName}
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-black text-amber-800 whitespace-nowrap">
+                        {formatKg(metrics.weightKg)}
+                      </td>
+                      <td className="py-2.5 px-3 text-left font-bold text-slate-900 whitespace-nowrap">
+                        {formatToman(metrics.saleAmount)}
+                      </td>
+                      <td className="py-2.5 px-3 text-left font-medium text-slate-600 whitespace-nowrap">
+                        {formatToman(metrics.cost)}
+                      </td>
+                      <td className="py-2.5 px-3 text-left font-black text-emerald-700 whitespace-nowrap">
+                        {formatToman(metrics.profit)}
+                      </td>
+                      <td className="py-2.5 px-3 text-left font-black text-emerald-800 bg-emerald-50/30 whitespace-nowrap">
+                        {formatToman(panelShare)}
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                            inv.status === 'official'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                          }`}
+                        >
+                          {inv.status === 'official' ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>فاکتور رسمی</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>پیش‌فاکتور</span>
+                            </>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        {onViewInvoice && (
+                          <button
+                            onClick={() => onViewInvoice(inv)}
+                            className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+                            title="مشاهده فاکتور"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
                         )}
-                        <span>{item.type}</span>
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-4 font-semibold text-slate-800">
-                      {item.description}
-                    </td>
-                    <td className={`py-2.5 px-4 text-left font-black whitespace-nowrap ${
-                      item.effect === 'plus' ? 'text-emerald-700' : 'text-rose-700'
-                    }`}>
-                      {item.effect === 'plus' ? '+' : '-'} {item.amountText}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
             {/* Mobile View Card List */}
-            <div className="md:hidden divide-y divide-slate-100">
-              {sortedLedger.map((item, idx) => (
-                <div key={item.id} className="p-3 flex items-center justify-between gap-3 hover:bg-slate-50/50">
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                        item.effect === 'plus'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-rose-50 text-rose-700'
-                      }`}>
-                        {item.type}
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-medium">{item.date}</span>
+            <div className="lg:hidden divide-y divide-slate-100">
+              {activeExitInvoices.map((inv) => {
+                const metrics = getInvoiceMetrics(inv);
+                const panelShare =
+                  activePanel === 'partner1'
+                    ? metrics.p1Profit
+                    : activePanel === 'partner2'
+                    ? metrics.p2Profit
+                    : metrics.profit;
+
+                return (
+                  <div key={inv.id} className="p-3 space-y-2 hover:bg-slate-50/50 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-xs text-slate-900">
+                          {inv.officialInvoiceNumber || inv.invoiceNumber}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {inv.officialDate || inv.date}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            inv.status === 'official'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {inv.status === 'official' ? 'رسمی' : 'پیش‌فاکتور'}
+                        </span>
+                        {onViewInvoice && (
+                          <button
+                            onClick={() => onViewInvoice(inv)}
+                            className="p-1 text-amber-600 bg-amber-50 rounded"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs font-bold text-slate-800 truncate" title={item.description}>
-                      {item.description}
-                    </p>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-600 font-medium">{inv.customerName}</span>
+                      <span className="font-bold text-amber-800">{formatKg(metrics.weightKg)}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5 p-2 bg-slate-50 rounded-xl text-[10px]">
+                      <div>
+                        <span className="text-slate-400 block">مبلغ فروش:</span>
+                        <span className="font-bold text-slate-800 dir-ltr block">{formatToman(metrics.saleAmount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">بهای خرید:</span>
+                        <span className="font-bold text-slate-800 dir-ltr block">{formatToman(metrics.cost)}</span>
+                      </div>
+                      <div className="text-left bg-emerald-50 p-1 rounded-lg">
+                        <span className="text-emerald-700 font-bold block">سهم این پنل:</span>
+                        <span className="font-black text-emerald-800 dir-ltr block">{formatToman(panelShare)}</span>
+                      </div>
+                    </div>
                   </div>
-                  
-                  <div className={`text-left font-black text-xs shrink-0 whitespace-nowrap ${
-                    item.effect === 'plus' ? 'text-emerald-700' : 'text-rose-700'
-                  }`}>
-                    {item.effect === 'plus' ? '+' : '-'} {item.amountText}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

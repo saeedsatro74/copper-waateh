@@ -10,6 +10,7 @@ import {
   LooseItem,
   Transaction,
   Invoice,
+  InvoiceLineItem,
   User,
   Category,
   SelectedItemForAction,
@@ -555,6 +556,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       originPalletCode: pallet.palletCode,
       entryDate: getPersianDateString(),
       location: pallet.location,
+      purchaser: pallet.purchaser,
+      buyPricePerKg: pallet.buyPricePerKg,
       notes: `جدا شده از پالت ${pallet.palletCode}`,
     }));
 
@@ -606,6 +609,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       thickness: reel.thickness,
       diameter: reel.diameter,
       weightKg: reel.weightKg,
+      purchaser: reel.purchaser,
+      buyPricePerKg: reel.buyPricePerKg,
       description: `قرقره باز شده ${reel.reelCode} - آماده خورده‌فروشی`,
       originType: 'opened_reel',
       entryDate: getPersianDateString(),
@@ -948,6 +953,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         reels: data.reels || [],
         notes: data.notes,
         purchaser: purchaserName,
+        buyPricePerKg: pricePerKg || data.buyPricePerKg || 0,
       };
       newPallets.unshift(pallet);
       addedWeight = pallet.reels.reduce((s, r) => s + r.weightKg, 0);
@@ -965,6 +971,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         location: data.location || 'انبار قرقره‌ها',
         notes: data.notes,
         purchaser: purchaserName,
+        buyPricePerKg: pricePerKg || data.buyPricePerKg || 0,
       };
       newReels.unshift(reel);
       addedWeight = reel.weightKg;
@@ -981,6 +988,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         location: data.location || 'انبار کلاف',
         notes: data.notes,
         purchaser: purchaserName,
+        buyPricePerKg: pricePerKg || data.buyPricePerKg || 0,
       };
       newCoils.unshift(coil);
       addedWeight = coil.weightKg;
@@ -999,6 +1007,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         location: data.location || 'انبار شاخه‌ها',
         notes: data.notes,
         purchaser: purchaserName,
+        buyPricePerKg: pricePerKg || data.buyPricePerKg || 0,
       };
       newBranches.unshift(branch);
       addedWeight = branch.totalWeightKg;
@@ -1017,6 +1026,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         entryDate: getPersianDateString(),
         notes: data.notes,
         purchaser: purchaserName,
+        buyPricePerKg: pricePerKg || data.buyPricePerKg || 0,
       };
       newLoose.unshift(loose);
       addedWeight = loose.weightKg;
@@ -1060,8 +1070,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : { ...(updatedPartnerInfo.sharedAccount || { initialCash: 0, initialCopperKg: 0 }) };
 
       const prevCash = accObj.initialCash || 0;
-      const newCash = prevCash + purchaseCost;
+      const newCash = prevCash - purchaseCost;
       accObj.initialCash = newCash;
+
+      const prevCopper = accObj.initialCopperKg || 0;
+      accObj.initialCopperKg = prevCopper + addedWeight;
 
       if (targetAccKey === 'partner1') updatedPartnerInfo.partner1Account = accObj;
       else if (targetAccKey === 'partner2') updatedPartnerInfo.partner2Account = accObj;
@@ -1072,11 +1085,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         targetAccount: targetAccKey,
         accountName: purchaserName,
         assetType: 'cash',
-        operation: 'deposit',
+        operation: 'withdraw',
         amount: purchaseCost,
         previousAmount: prevCash,
         newAmount: newCash,
-        notes: `افزایش خودکار موجودی نقدی بابت خرید و ورود بار ${title} (${addedWeight.toLocaleString('fa-IR')} کیلوگرم با فی هر کیلو ${pricePerKg?.toLocaleString('fa-IR')} تومان)`,
+        notes: `کسر خودکار موجودی نقدی بابت خرید و ورود بار ${title} (${addedWeight.toLocaleString('fa-IR')} کیلوگرم با فی هر کیلو ${pricePerKg?.toLocaleString('fa-IR')} تومان)`,
         date: getPersianDateString(),
         time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
         registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
@@ -1141,8 +1154,25 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     let totalWeight = 0;
     let totalCalculatedAmount = 0;
-    const invoiceLineItems: any[] = [];
+    let totalCalculatedCost = 0;
+    let totalCalculatedProfit = 0;
+    const invoiceLineItems: InvoiceLineItem[] = [];
     const itemSummaries: string[] = [];
+
+    const recentEntryTx = state.transactions.find((t) => t.type === 'entry' && t.pricePerKg && t.pricePerKg > 0);
+    const defaultBuyPrice = recentEntryTx?.pricePerKg || 680000;
+
+    const p1Name = state.warehouseProfile.partnerInfo?.partner1Name || 'شریک اول (مدیر ۱)';
+    const p2Name = state.warehouseProfile.partnerInfo?.partner2Name || 'شریک دوم (مدیر ۲)';
+
+    const partnerDeductions: Record<
+      'partner1' | 'partner2' | 'shared',
+      { weightKg: number; amount: number; cost: number; purchaserName: string }
+    > = {
+      partner1: { weightKg: 0, amount: 0, cost: 0, purchaserName: p1Name },
+      partner2: { weightKg: 0, amount: 0, cost: 0, purchaserName: p2Name },
+      shared: { weightKg: 0, amount: 0, cost: 0, purchaserName: 'حساب مشترک' },
+    };
 
     // Map subItems per pallet to support multiple selections from same pallet
     const palletSubItemsMap = new Map<string, string[]>();
@@ -1154,6 +1184,26 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const itemUnitPrice = itemPricesMap?.[itemKey] ?? item.unitPrice ?? pricePerKg;
       const lineTotal = Math.round(item.weightKg * itemUnitPrice);
       totalCalculatedAmount += lineTotal;
+
+      const itemBuyPrice = (item.buyPricePerKg && item.buyPricePerKg > 0) ? item.buyPricePerKg : defaultBuyPrice;
+      const lineCost = Math.round(item.weightKg * itemBuyPrice);
+      const lineProfit = lineTotal - lineCost;
+      totalCalculatedCost += lineCost;
+      totalCalculatedProfit += lineProfit;
+
+      const purchaserName = item.purchaser || 'حساب مشترک';
+      let targetAcc: 'partner1' | 'partner2' | 'shared' = 'shared';
+      if (purchaserName === p1Name || purchaserName.includes('اول') || purchaserName.includes('مدیر ۱')) {
+        targetAcc = 'partner1';
+      } else if (purchaserName === p2Name || purchaserName.includes('دوم') || purchaserName.includes('مدیر ۲')) {
+        targetAcc = 'partner2';
+      } else {
+        targetAcc = 'shared';
+      }
+
+      partnerDeductions[targetAcc].weightKg += item.weightKg;
+      partnerDeductions[targetAcc].amount += lineTotal;
+      partnerDeductions[targetAcc].cost += lineCost;
 
       invoiceLineItems.push({
         id: `li-${Date.now()}-${index}`,
@@ -1175,11 +1225,15 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         unit: 'کیلوگرم',
         weightKg: item.weightKg,
         unitPrice: itemUnitPrice,
+        buyPricePerKg: itemBuyPrice,
         totalPrice: lineTotal,
+        costPrice: lineCost,
+        profit: lineProfit,
+        purchaser: purchaserName,
       });
 
       itemSummaries.push(
-        `${item.description} - ${item.brand} (وزن: ${item.weightKg} کیلوگرم ، فی: ${itemUnitPrice.toLocaleString('fa-IR')} تومان)`
+        `${item.description} - ${item.brand} (وزن: ${item.weightKg} کیلوگرم ، فی فروش: ${itemUnitPrice.toLocaleString('fa-IR')} تومان ، فی خرید: ${itemBuyPrice.toLocaleString('fa-IR')} تومان ، سود: ${lineProfit.toLocaleString('fa-IR')} تومان)`
       );
 
       // Categorize items
@@ -1225,6 +1279,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             originPalletCode: pallet.palletCode,
             entryDate: getPersianDateString(),
             location: pallet.location,
+            purchaser: pallet.purchaser,
+            buyPricePerKg: pallet.buyPricePerKg,
             notes: `باقیمانده از پالت ${pallet.palletCode} پس از خروج قرقره‌ها`,
           });
         });
@@ -1241,6 +1297,60 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       `پیش‌فاکتور-۱۴۰۳-${state.invoices.length + 101}`;
     const totalAmount = totalCalculatedAmount;
 
+    let updatedPartnerInfo: PartnerInfo = state.warehouseProfile.partnerInfo
+      ? { ...state.warehouseProfile.partnerInfo }
+      : {
+          partner1Name: p1Name,
+          partner2Name: p2Name,
+          partner1SharePercent: 50,
+          partner2SharePercent: 50,
+          partner1Account: { initialCash: 0, initialCopperKg: 0 },
+          partner2Account: { initialCash: 0, initialCopperKg: 0 },
+          sharedAccount: { initialCash: 0, initialCopperKg: 0 },
+        };
+
+    const newAdjustments = [...(state.balanceAdjustments || [])];
+
+    // Deduct weight and money from each owner's account
+    (['partner1', 'partner2', 'shared'] as const).forEach((accKey) => {
+      const ded = partnerDeductions[accKey];
+      if (ded.weightKg > 0 || ded.amount > 0) {
+        const accField =
+          accKey === 'partner1'
+            ? 'partner1Account'
+            : accKey === 'partner2'
+            ? 'partner2Account'
+            : 'sharedAccount';
+
+        const currentAcc = { ...(updatedPartnerInfo[accField] || { initialCash: 0, initialCopperKg: 0 }) };
+        const prevCash = currentAcc.initialCash || 0;
+        const newCash = prevCash + ded.amount;
+        currentAcc.initialCash = newCash;
+
+        const prevCopper = currentAcc.initialCopperKg || 0;
+        const newCopper = Math.max(0, prevCopper - ded.weightKg);
+        currentAcc.initialCopperKg = newCopper;
+
+        updatedPartnerInfo[accField] = currentAcc;
+
+        // Add deposit balance adjustment record
+        newAdjustments.unshift({
+          id: `adj-exit-${Date.now()}-${accKey}`,
+          targetAccount: accKey,
+          accountName: ded.purchaserName,
+          assetType: 'cash',
+          operation: 'deposit',
+          amount: ded.amount,
+          previousAmount: prevCash,
+          newAmount: newCash,
+          notes: `افزایش موجودی نقدی بابت خروج و فروش بار در فاکتور ${invoiceNum} (${ded.weightKg.toLocaleString('fa-IR')} کیلوگرم مس به ارزش فروش ${formatToman(ded.amount)})`,
+          date: getPersianDateString(),
+          time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+        });
+      }
+    });
+
     const newInvoice: Invoice = {
       id: `inv-${Date.now()}`,
       invoiceNumber: invoiceNum,
@@ -1255,6 +1365,8 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       originalItems: itemsToExit,
       totalWeightKg: totalWeight,
       totalAmount: totalAmount,
+      totalCost: totalCalculatedCost,
+      totalProfit: totalCalculatedProfit,
       notes: notes || state.warehouseProfile.defaultInvoiceFooter,
       registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
       status: 'proforma',
@@ -1272,7 +1384,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
       userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
       timestamp: getPersianDateTimeString(),
-      details: `صدور پیش‌فاکتور برای ${customerName} شامل ${itemsToExit.length} قلم کالا به وزن کل ${totalWeight} کیلوگرم.`,
+      details: `صدور پیش‌فاکتور برای ${customerName} شامل ${itemsToExit.length} قلم کالا به وزن کل ${totalWeight} کیلوگرم. بهای تمام شده خرید: ${formatToman(totalCalculatedCost)} | مبلغ فروش: ${formatToman(totalAmount)} | سود برآوردی: ${formatToman(totalCalculatedProfit)}.`,
       pricePerKg: pricePerKg,
       totalPrice: totalAmount,
       itemSummaries: itemSummaries,
@@ -1280,6 +1392,11 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     updatePresentState({
       ...state,
+      warehouseProfile: {
+        ...state.warehouseProfile,
+        partnerInfo: updatedPartnerInfo,
+      },
+      balanceAdjustments: newAdjustments,
       pallets: updatedPallets,
       reels: updatedReels,
       coils: updatedCoils,
@@ -1292,7 +1409,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Clear selections
     setSelectedItems([]);
 
-    showToast(`پیش‌فاکتور ${invoiceNum} صادر و از موجودی انبار کسر گردید.`, 'success');
+    showToast(`پیش‌فاکتور ${invoiceNum} صادر و از موجودی انبار و حساب کسر گردید.`, 'success');
 
     return newInvoice;
   };

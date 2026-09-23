@@ -75,6 +75,7 @@ export interface PalletItem {
   location: string;
   status: 'sealed' | 'opened';
   purchaser?: string;
+  buyPricePerKg?: number;
   notes?: string;
 }
 
@@ -89,6 +90,7 @@ export interface StandaloneReelItem {
   entryDate: string;
   location: string;
   purchaser?: string;
+  buyPricePerKg?: number;
   notes?: string;
 }
 
@@ -103,6 +105,7 @@ export interface CoilItem {
   entryDate: string;
   location: string;
   purchaser?: string;
+  buyPricePerKg?: number;
   notes?: string;
 }
 
@@ -118,6 +121,7 @@ export interface BranchItem {
   entryDate: string;
   location: string;
   purchaser?: string;
+  buyPricePerKg?: number;
   notes?: string;
 }
 
@@ -132,6 +136,7 @@ export interface LooseItem {
   originType: string;
   entryDate: string;
   purchaser?: string;
+  buyPricePerKg?: number;
   notes?: string;
 }
 
@@ -235,6 +240,9 @@ export interface InvoiceLineItem {
   unitPrice: number;
   buyPricePerKg?: number;
   totalPrice: number;
+  costPrice?: number;
+  profit?: number;
+  purchaser?: string;
 }
 
 export interface Invoice {
@@ -256,6 +264,7 @@ export interface Invoice {
   paidAmount?: number;
   remainingAmount?: number;
   paymentsHistory?: PaymentRecord[];
+  totalCost?: number;
   totalProfit?: number;
   paymentAllocation?: PaymentAllocation;
   notes: string;

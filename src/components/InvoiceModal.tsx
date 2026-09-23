@@ -16,6 +16,7 @@ import {
   Undo2,
   Ban,
   AlertCircle,
+  TrendingUp,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { Invoice, SelectedItemForAction, PaymentAllocation } from '../types';
@@ -100,6 +101,26 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   const totalAmount = invoiceToView
     ? invoiceToView.totalAmount
     : items.reduce((acc, item) => acc + Math.round(item.weightKg * getItemUnitPrice(item)), 0);
+
+  const partnerInfo = state.warehouseProfile.partnerInfo;
+  const p1Name = partnerInfo?.partner1Name || 'شریک اول';
+  const p2Name = partnerInfo?.partner2Name || 'شریک دوم';
+  const p1Share = partnerInfo?.partner1SharePercent ?? 50;
+  const p2Share = partnerInfo?.partner2SharePercent ?? 50;
+
+  const recentEntryTx = state.transactions.find((t) => t.type === 'entry' && t.pricePerKg && t.pricePerKg > 0);
+  const defaultBuyPrice = recentEntryTx?.pricePerKg || 680000;
+
+  const totalBuyCost = invoiceToView
+    ? (invoiceToView.totalCost || invoiceToView.items.reduce((s, it) => s + Math.round(it.weightKg * (it.buyPricePerKg || defaultBuyPrice)), 0))
+    : items.reduce((acc, item) => {
+        const bPrice = (item.buyPricePerKg && item.buyPricePerKg > 0) ? item.buyPricePerKg : defaultBuyPrice;
+        return acc + Math.round(item.weightKg * bPrice);
+      }, 0);
+
+  const estimatedInvoiceProfit = totalAmount - totalBuyCost;
+  const p1ProfitEst = Math.round((estimatedInvoiceProfit * p1Share) / 100);
+  const p2ProfitEst = Math.round((estimatedInvoiceProfit * p2Share) / 100);
 
   const handleIssueAndFinish = (e: React.FormEvent) => {
     e.preventDefault();
@@ -300,6 +321,40 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </div>
               </div>
 
+              {/* Profit and Partner Distribution Live Preview */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-3 sm:p-3.5 rounded-xl sm:rounded-2xl border border-emerald-200/80 shadow-xs space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold text-emerald-950">
+                  <span className="flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                    <span>محاسبه و تقسیم خودکار سود مس در پنل‌ها:</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-700 font-semibold">
+                    (قیمت فروش منهای قیمت خرید مس)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">بهای کل خرید مس:</span>
+                    <span className="font-bold text-slate-800 dir-ltr block truncate">{formatToman(totalBuyCost)}</span>
+                  </div>
+                  <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">سود کل این فاکتور:</span>
+                    <span className={`font-black dir-ltr block truncate ${estimatedInvoiceProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {formatToman(estimatedInvoiceProfit)}
+                    </span>
+                  </div>
+                  <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">سود {p1Name} ({formatPersianNumber(p1Share)}٪):</span>
+                    <span className="font-black text-emerald-800 dir-ltr block truncate">{formatToman(p1ProfitEst)}</span>
+                  </div>
+                  <div className="bg-white/90 p-2 rounded-xl border border-emerald-100 shadow-2xs">
+                    <span className="text-[10px] text-slate-500 block">سود {p2Name} ({formatPersianNumber(p2Share)}٪):</span>
+                    <span className="font-black text-emerald-800 dir-ltr block truncate">{formatToman(p2ProfitEst)}</span>
+                  </div>
+                </div>
+              </div>
+
               {/* Items Selected & Individual Unit Price Table */}
               <div className="border border-slate-200 rounded-xl sm:rounded-2xl overflow-hidden shadow-xs">
                 <div className="bg-slate-900 text-white px-3 py-2.5 sm:px-4 sm:py-3 font-bold text-xs flex flex-wrap items-center justify-between gap-1.5">
@@ -313,21 +368,27 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 </div>
 
                 <div className="overflow-x-auto scrollbar-thin">
-                  <table className="w-full text-right text-[11px] sm:text-xs min-w-[550px]">
+                  <table className="w-full text-right text-[11px] sm:text-xs min-w-[620px]">
                     <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
                       <tr>
                         <th className="p-2 sm:p-3 text-center w-8">#</th>
                         <th className="p-2 sm:p-3">شرح کالا و برند</th>
-                        <th className="p-2 sm:p-3 text-center">سایز / ضخامت</th>
+                        <th className="p-2 sm:p-3 text-center">مالک بار</th>
                         <th className="p-2 sm:p-3 text-center">وزن (kg)</th>
-                        <th className="p-2 sm:p-3 text-center w-32 sm:w-40">فی (تومان)</th>
-                        <th className="p-2 sm:p-3 text-left">مبلغ کل آیتم</th>
+                        <th className="p-2 sm:p-3 text-center">فی خرید</th>
+                        <th className="p-2 sm:p-3 text-center w-32 sm:w-36">فی فروش (تومان)</th>
+                        <th className="p-2 sm:p-3 text-left">مبلغ فروش</th>
+                        <th className="p-2 sm:p-3 text-left">سود قلم</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {items.map((it, idx) => {
                         const currentPrice = getItemUnitPrice(it);
                         const itemTotal = Math.round(it.weightKg * currentPrice);
+                        const itemBuyPrice = (it.buyPricePerKg && it.buyPricePerKg > 0) ? it.buyPricePerKg : defaultBuyPrice;
+                        const itemCost = Math.round(it.weightKg * itemBuyPrice);
+                        const itemProfit = itemTotal - itemCost;
+
                         return (
                           <tr key={idx} className="hover:bg-amber-50/40 transition-colors">
                             <td className="p-2 sm:p-3 text-center font-bold text-slate-400">
@@ -353,11 +414,16 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                                 </span>
                               </div>
                             </td>
-                            <td className="p-2 sm:p-3 text-center text-slate-600 whitespace-nowrap">
-                              {formatThickness(it.thickness, state.warehouseProfile.unitSettings?.thicknessUnit)} / {formatDiameter(it.diameter, state.warehouseProfile.unitSettings?.diameterUnit)}
+                            <td className="p-2 sm:p-3 text-center text-slate-700 font-medium whitespace-nowrap text-[10px]">
+                              <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-700">
+                                {it.purchaser || 'حساب مشترک'}
+                              </span>
                             </td>
                             <td className="p-2 sm:p-3 text-center font-bold text-amber-800 whitespace-nowrap">
                               {formatKg(it.weightKg)}
+                            </td>
+                            <td className="p-2 sm:p-3 text-center text-slate-500 font-medium whitespace-nowrap text-[10px]">
+                              {formatToman(itemBuyPrice)}
                             </td>
                             <td className="p-2 sm:p-3 text-center">
                               <input
@@ -371,8 +437,11 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                                 className="w-full p-1.5 sm:p-2 bg-white rounded-lg border border-slate-300 font-bold text-xs text-slate-900 focus:ring-2 focus:ring-amber-500 text-center dir-ltr"
                               />
                             </td>
-                            <td className="p-2 sm:p-3 text-left font-bold text-emerald-700 whitespace-nowrap">
+                            <td className="p-2 sm:p-3 text-left font-bold text-slate-900 whitespace-nowrap">
                               {formatToman(itemTotal)}
+                            </td>
+                            <td className={`p-2 sm:p-3 text-left font-black whitespace-nowrap ${itemProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              {formatToman(itemProfit)}
                             </td>
                           </tr>
                         );

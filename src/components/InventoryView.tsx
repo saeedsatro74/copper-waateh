@@ -203,7 +203,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
     brand: Brand,
     thickness: Thickness,
     diameter: Diameter,
-    weightKg: number
+    weightKg: number,
+    purchaser?: string,
+    buyPricePerKg?: number
   ) => {
     const item: SelectedItemForAction = {
       id,
@@ -212,6 +214,8 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
       thickness,
       diameter,
       weightKg,
+      purchaser,
+      buyPricePerKg,
       description,
     };
     toggleSelectItem(item);
@@ -595,7 +599,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                   reel.brand,
                                   reel.thickness,
                                   reel.diameter,
-                                  reel.weightKg
+                                  reel.weightKg,
+                                  reel.purchaser,
+                                  reel.buyPricePerKg
                                 )
                               }
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
@@ -708,7 +714,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                   coil.brand,
                                   coil.thickness,
                                   coil.diameter,
-                                  coil.weightKg
+                                  coil.weightKg,
+                                  coil.purchaser,
+                                  coil.buyPricePerKg
                                 )
                               }
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
@@ -823,7 +831,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                   branch.brand,
                                   branch.thickness,
                                   branch.diameter,
-                                  branch.totalWeightKg
+                                  branch.totalWeightKg,
+                                  branch.purchaser,
+                                  branch.buyPricePerKg
                                 )
                               }
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
@@ -944,7 +954,9 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                   item.brand,
                                   item.thickness,
                                   item.diameter,
-                                  item.weightKg
+                                  item.weightKg,
+                                  item.purchaser,
+                                  item.buyPricePerKg
                                 )
                               }
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
