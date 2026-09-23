@@ -1,42 +1,25 @@
 import React, { useState } from 'react';
 import {
-  History,
   ArrowDownRight,
   ArrowUpLeft,
   ArrowRightLeft,
   User,
-  Search,
-  Calendar,
-  FileSpreadsheet,
-  Filter,
-  CheckCircle,
-  FileText,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { formatKg, formatToman, formatPersianNumber, getDateTimeStringFromId } from '../utils/persian';
 
 export const TransactionsView: React.FC = () => {
   const { state } = useInventory();
+  const [expandedTxIds, setExpandedTxIds] = useState<Record<string, boolean>>({});
 
-  const [filterType, setFilterType] = useState<string>('all');
-  const [filterUser, setFilterUser] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const toggleExpand = (id: string) => {
+    setExpandedTxIds((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
 
-  const transactions = state.transactions.filter((tx) => {
-    const matchesType = filterType === 'all' || tx.type === filterType;
-    const matchesUser = filterUser === 'all' || tx.registeredBy.includes(filterUser);
-    const matchesSearch =
-      !searchQuery.trim() ||
-      tx.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
-      tx.registeredBy.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
-      (tx.buyerOrSupplier &&
-        tx.buyerOrSupplier.toLowerCase().includes(searchQuery.toLowerCase().trim())) ||
-      (tx.invoiceNumber && tx.invoiceNumber.includes(searchQuery.trim()));
-
-    return matchesType && matchesUser && matchesSearch;
-  });
-
-  const sortedTransactions = [...transactions].sort((a, b) => {
+  const sortedTransactions = [...state.transactions].sort((a, b) => {
     const matchA = a.id.match(/\d+/);
     const matchB = b.id.match(/\d+/);
     const timeA = matchA ? parseInt(matchA[0], 10) : 0;
@@ -45,187 +28,142 @@ export const TransactionsView: React.FC = () => {
   });
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-16">
-      {/* Header Stat Overview */}
-      <div className="bg-white p-3.5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="flex items-center space-x-2.5 sm:space-x-3 space-x-reverse min-w-0">
-          <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold shrink-0">
-            <History className="w-5 h-5 sm:w-6 sm:h-6" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm sm:text-lg font-bold text-slate-900 truncate">سوابق تراکنش‌ها و ثبت‌کنندگان</h2>
-            <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 line-clamp-1">
-              ثبت شفاف تمام ورودی‌ها، خروجی‌ها و باز کردن پالت‌ها توسط مدیر و ادمین‌های انبار
-            </p>
-          </div>
-        </div>
+    <div className="pb-16 text-right">
+      {/* Dense Table Form */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-right border-collapse table-fixed min-w-[900px]">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs font-black">
+                <th className="py-3 px-4 w-12 text-center">ردیف</th>
+                <th className="py-3 px-4 w-36">زمان و تاریخ</th>
+                <th className="py-3 px-4 w-28">نوع تراکنش</th>
+                <th className="py-3 px-4 w-52">شرح تراکنش</th>
+                <th className="py-3 px-4 w-36">ثبت‌کننده / ادمین</th>
+                <th className="py-3 px-4 w-36">طرف حساب</th>
+                <th className="py-3 px-4 w-24 text-left">وزن</th>
+                <th className="py-3 px-4 w-32 text-left">مبلغ کل</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+              {sortedTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
+                    هیچ تراکنشی در سیستم ثبت نشده است.
+                  </td>
+                </tr>
+              ) : (
+                sortedTransactions.map((tx, idx) => {
+                  const isEntry = tx.type === 'entry';
+                  const isExit = tx.type === 'exit';
+                  const isPalletUnpack = tx.type === 'pallet_unpack';
+                  const isExpanded = !!expandedTxIds[tx.id];
 
-        <div className="flex items-center space-x-3 space-x-reverse bg-slate-50 p-2 sm:p-2.5 rounded-xl border border-slate-200 text-xs w-full sm:w-auto justify-around sm:justify-start">
-          <div>
-            <span className="text-slate-400 block text-[9px] sm:text-[10px]">کل تراکنش‌ها</span>
-            <span className="font-bold text-slate-900 text-xs sm:text-sm">
-              {formatPersianNumber(state.transactions.length)} ثبت
-            </span>
-          </div>
-          <div className="h-5 w-px bg-slate-200" />
-          <div>
-            <span className="text-slate-400 block text-[9px] sm:text-[10px]">کاربران فعال</span>
-            <span className="font-bold text-amber-800 text-xs sm:text-sm">
-              {formatPersianNumber(state.users.length)} نفر
-            </span>
-          </div>
-        </div>
-      </div>
+                  return (
+                    <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
+                      {/* Row Index */}
+                      <td className="py-2.5 px-4 text-center font-bold text-slate-400">
+                        {formatPersianNumber(sortedTransactions.length - idx)}
+                      </td>
 
-      {/* Filter and Search controls */}
-      <div className="bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200 shadow-xs grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 sm:top-3" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="جستجو در عنوان، ادمین، خریدار..."
-            className="w-full pr-9 pl-3 py-1.5 sm:py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-hidden focus:border-amber-500"
-          />
-        </div>
+                      {/* Timestamp */}
+                      <td className="py-2.5 px-4 font-medium text-slate-500 whitespace-nowrap">
+                        {tx.timestamp || getDateTimeStringFromId(tx.id)}
+                      </td>
 
-        <div>
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="w-full p-1.5 sm:p-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800"
-          >
-            <option value="all">همه انواع تراکنش‌ها</option>
-            <option value="entry">فقط ورودی‌های انبار (ورود کالا)</option>
-            <option value="exit">فقط خروجی‌ها و پیش‌فاکتورها</option>
-            <option value="pallet_unpack">باز کردن پالت‌ها</option>
-            <option value="reel_unpack">تبدیل قرقره به خورده</option>
-          </select>
-        </div>
-
-        <div>
-          <select
-            value={filterUser}
-            onChange={(e) => setFilterUser(e.target.value)}
-            className="w-full p-1.5 sm:p-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold text-slate-800"
-          >
-            <option value="all">فیلتر بر اساس ادمین / ثبت‌کننده</option>
-            {state.users.map((u) => (
-              <option key={u.id} value={u.fullName}>
-                {u.fullName} ({u.role === 'manager' ? 'مدیر' : 'ادمین'})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Transactions List */}
-      <div className="space-y-3">
-        {sortedTransactions.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
-            <History className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="font-bold text-sm">هیچ تراکنشی مطابق فیلتر یافت نشد.</p>
-          </div>
-        ) : (
-          sortedTransactions.map((tx) => {
-            const isEntry = tx.type === 'entry';
-            const isExit = tx.type === 'exit';
-            const isPalletUnpack = tx.type === 'pallet_unpack';
-
-            return (
-              <div
-                key={tx.id}
-                className="bg-white rounded-xl sm:rounded-2xl border border-slate-200 p-3 sm:p-5 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-3"
-              >
-                <div className="flex items-start space-x-2.5 sm:space-x-3.5 space-x-reverse min-w-0">
-                  {/* Icon Badge */}
-                  <div
-                    className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 font-bold ${
-                      isEntry
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : isExit
-                        ? 'bg-rose-100 text-rose-800'
-                        : 'bg-amber-100 text-amber-800'
-                    }`}
-                  >
-                    {isEntry ? (
-                      <ArrowDownRight className="w-4 h-4 sm:w-6 sm:h-6" />
-                    ) : isExit ? (
-                      <ArrowUpLeft className="w-4 h-4 sm:w-6 sm:h-6" />
-                    ) : (
-                      <ArrowRightLeft className="w-4 h-4 sm:w-6 sm:h-6" />
-                    )}
-                  </div>
-
-                  {/* Title & Details */}
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-bold text-sm text-slate-900">{tx.title}</h3>
-
-                      <span
-                        className={`px-2.5 py-0.5 rounded-md font-bold text-[11px] ${
-                          isEntry
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : isExit
-                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                            : 'bg-amber-50 text-amber-800 border border-amber-200'
-                        }`}
-                      >
-                        {isEntry
-                          ? 'ورود به انبار'
-                          : isExit
-                          ? 'خروج و پیش‌فاکتور'
-                          : isPalletUnpack
-                          ? 'تفکیک پالت'
-                          : 'تبدیل به خورده'}
-                      </span>
-
-                      {tx.invoiceNumber && (
-                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md text-[11px] font-bold">
-                          {tx.invoiceNumber}
+                      {/* Transaction Type Badge */}
+                      <td className="py-2.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md font-bold text-[10px] ${
+                            isEntry
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : isExit
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : 'bg-amber-50 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {isEntry ? (
+                            <ArrowDownRight className="w-3 h-3 shrink-0 text-emerald-600" />
+                          ) : isExit ? (
+                            <ArrowUpLeft className="w-3 h-3 shrink-0 text-rose-600" />
+                          ) : (
+                            <ArrowRightLeft className="w-3 h-3 shrink-0 text-amber-600" />
+                          )}
+                          <span>
+                            {isEntry
+                              ? 'ورود'
+                              : isExit
+                              ? 'خروج'
+                              : isPalletUnpack
+                              ? 'تفکیک پالت'
+                              : 'تفکیک خورده'}
+                          </span>
                         </span>
-                      )}
-                    </div>
+                      </td>
 
-                    <p className="text-xs text-slate-600 leading-relaxed">{tx.details}</p>
+                      {/* Title & Details (Truncated / Resizable on Click) */}
+                      <td
+                        className="py-2.5 px-4 cursor-pointer select-none align-middle"
+                        onClick={() => toggleExpand(tx.id)}
+                        title="کلیک کنید تا جزئیات بیشتر باز/بسته شود"
+                      >
+                        <div className="font-bold text-slate-900 flex items-center gap-1 flex-wrap">
+                          <span className={isExpanded ? 'whitespace-normal' : 'truncate max-w-[180px] block'}>
+                            {tx.title}
+                          </span>
+                          {tx.invoiceNumber && (
+                            <span className="bg-slate-100 text-slate-700 px-1 py-0.5 rounded text-[8px] font-black shrink-0">
+                              {tx.invoiceNumber}
+                            </span>
+                          )}
+                        </div>
+                        {tx.details && (
+                          <div
+                            className={`text-[10px] text-slate-400 mt-0.5 transition-all ${
+                              isExpanded
+                                ? 'whitespace-normal break-words text-slate-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-200/30 mt-1'
+                                : 'truncate max-w-[180px]'
+                            }`}
+                          >
+                            {tx.details}
+                          </div>
+                        )}
+                        {!isExpanded && (tx.title.length > 25 || (tx.details && tx.details.length > 25)) && (
+                          <span className="text-[9px] text-amber-600 font-black hover:underline mt-0.5 block">
+                            ادامه مطلب...
+                          </span>
+                        )}
+                      </td>
 
-                    {tx.buyerOrSupplier && (
-                      <p className="text-xs text-slate-500 font-medium">
-                        طرف حساب / خریدار: <span className="text-slate-800 font-bold">{tx.buyerOrSupplier}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
+                      {/* Registered By */}
+                      <td className="py-2.5 px-4 font-bold text-slate-800 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <User className="w-3 h-3 text-slate-400" />
+                          <span>{tx.registeredBy}</span>
+                        </div>
+                      </td>
 
-                {/* Registered By Admin Badge & Weight Info */}
-                <div className="flex items-center justify-between md:justify-end space-x-6 space-x-reverse pt-3 md:pt-0 border-t md:border-t-0 border-slate-100 shrink-0">
-                  <div className="text-right">
-                    <div className="text-xs font-black text-amber-800">
-                      وزن: {formatKg(tx.totalWeightKg)}
-                    </div>
-                    {tx.totalPrice && (
-                      <div className="text-xs font-bold text-slate-900 mt-0.5">
-                        {formatToman(tx.totalPrice)}
-                      </div>
-                    )}
-                  </div>
+                      {/* Buyer Or Supplier */}
+                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap font-medium truncate max-w-[120px]" title={tx.buyerOrSupplier}>
+                        {tx.buyerOrSupplier || '-'}
+                      </td>
 
-                  {/* Who Registered (کدام ادمین / کاربر) */}
-                  <div className="bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 text-right">
-                    <div className="flex items-center space-x-1.5 space-x-reverse text-xs font-bold text-slate-800">
-                      <User className="w-3.5 h-3.5 text-amber-600" />
-                      <span>ثبت توسط: {tx.registeredBy}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-bold mt-0.5">
-                      زمان: {tx.timestamp || getDateTimeStringFromId(tx.id)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+                      {/* Total Weight */}
+                      <td className="py-2.5 px-4 text-left font-black text-amber-950 whitespace-nowrap">
+                        {formatKg(tx.totalWeightKg)}
+                      </td>
+
+                      {/* Total Price */}
+                      <td className="py-2.5 px-4 text-left font-bold text-emerald-800 whitespace-nowrap">
+                        {tx.totalPrice ? formatToman(tx.totalPrice) : '-'}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

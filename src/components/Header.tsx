@@ -371,7 +371,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>صورت‌حساب خریداران</span>
+              <span>صورت حساب</span>
             </button>
 
             <button
@@ -383,7 +383,7 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>پیش‌فاکتورها و خروج</span>
+              <span>پیش فاکتور</span>
             </button>
 
             {isManager && (
