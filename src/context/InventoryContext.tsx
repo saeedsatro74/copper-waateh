@@ -56,8 +56,12 @@ interface InventoryContextType {
   // Inventory operations
   unpackPallet: (palletId: string, selectedReelId?: string) => void;
   unpackReelToLoose: (reelId: string) => void;
+  unpackCoilToLoose: (coilId: string) => void;
+  unpackBranchToLoose: (branchId: string) => void;
   deductFromLooseItem: (looseItemId: string, deductKg: number, notes?: string) => void;
   deductFromReelAndMoveToLoose: (reelId: string, deductKg: number, notes?: string) => void;
+  deductFromCoilAndMoveToLoose: (coilId: string, deductKg: number, notes?: string) => void;
+  deductFromBranchAndMoveToLoose: (branchId: string, deductKg: number, notes?: string) => void;
   
   addStockEntry: (
     type: Category,
@@ -635,6 +639,94 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     showToast(`قرقره ${reel.reelCode} باز شد و به بخش خورده‌فروشی منتقل گردید.`, 'success');
   };
 
+  const unpackCoilToLoose = (coilId: string) => {
+    const coil = state.coils.find((c) => c.id === coilId);
+    if (!coil) return;
+
+    const newLooseItem: LooseItem = {
+      id: `los-unp-${Date.now()}`,
+      code: `LSE-COIL-${coil.code}`,
+      brand: coil.brand,
+      thickness: coil.thickness,
+      diameter: coil.diameter,
+      weightKg: coil.weightKg,
+      description: `کلاف باز شده ${coil.code} - آماده خورده‌فروشی`,
+      originType: 'opened_coil',
+      entryDate: getPersianDateString(),
+      notes: `انتقال مستقیم از دسته کلاف‌ها به خورده‌فروشی`,
+    };
+
+    const newTx: Transaction = {
+      id: `trx-${Date.now()}`,
+      type: 'reel_unpack',
+      title: `انتقال کلاف ${coil.code} به دسته خورده‌فروشی`,
+      category: 'coil',
+      itemsCount: 1,
+      totalWeightKg: coil.weightKg,
+      registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
+      timestamp: getPersianDateTimeString(),
+      details: `کلاف کد ${coil.code} به وزن ${coil.weightKg} کیلوگرم به دسته خورده‌فروشی منتقل گردید.`,
+    };
+
+    const updatedCoils = state.coils.filter((c) => c.id !== coilId);
+    const updatedLoose = [...state.loose, newLooseItem];
+    const updatedTransactions = [newTx, ...state.transactions];
+
+    updatePresentState({
+      ...state,
+      coils: updatedCoils,
+      loose: updatedLoose,
+      transactions: updatedTransactions,
+    });
+
+    showToast(`کلاف ${coil.code} با موفقیت به دسته خورده‌فروشی منتقل شد.`, 'success');
+  };
+
+  const unpackBranchToLoose = (branchId: string) => {
+    const branch = state.branches.find((b) => b.id === branchId);
+    if (!branch) return;
+
+    const newLooseItem: LooseItem = {
+      id: `los-unp-${Date.now()}`,
+      code: `LSE-BRN-${branch.code}`,
+      brand: branch.brand,
+      thickness: branch.thickness,
+      diameter: branch.diameter,
+      weightKg: branch.totalWeightKg,
+      description: `شاخه باز شده بندیل ${branch.code} - آماده خورده‌فروشی`,
+      originType: 'opened_branch',
+      entryDate: getPersianDateString(),
+      notes: `انتقال مستقیم از دسته بندیل شاخه‌ها به خورده‌فروشی`,
+    };
+
+    const newTx: Transaction = {
+      id: `trx-${Date.now()}`,
+      type: 'reel_unpack',
+      title: `انتقال بندیل شاخه ${branch.code} به دسته خورده‌فروشی`,
+      category: 'branch',
+      itemsCount: 1,
+      totalWeightKg: branch.totalWeightKg,
+      registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
+      timestamp: getPersianDateTimeString(),
+      details: `بندیل شاخه کد ${branch.code} به وزن ${branch.totalWeightKg} کیلوگرم به دسته خورده‌فروشی منتقل گردید.`,
+    };
+
+    const updatedBranches = state.branches.filter((b) => b.id !== branchId);
+    const updatedLoose = [...state.loose, newLooseItem];
+    const updatedTransactions = [newTx, ...state.transactions];
+
+    updatePresentState({
+      ...state,
+      branches: updatedBranches,
+      loose: updatedLoose,
+      transactions: updatedTransactions,
+    });
+
+    showToast(`بندیل شاخه ${branch.code} با موفقیت به دسته خورده‌فروشی منتقل شد.`, 'success');
+  };
+
   // Deduct weight from Loose Item (e.g. deduct 5 kg from loose item)
   const deductFromLooseItem = (looseItemId: string, deductKg: number, notes?: string) => {
     const looseItem = state.loose.find((l) => l.id === looseItemId);
@@ -723,6 +815,106 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
 
     showToast(`کسر وزن ${deductKg} کیلوگرم ثبت شد و باقیمانده به خورده‌فروشی منتقل گردید.`, 'success');
+  };
+
+  const deductFromCoilAndMoveToLoose = (coilId: string, deductKg: number, notes?: string) => {
+    const coil = state.coils.find((c) => c.id === coilId);
+    if (!coil || deductKg <= 0) return;
+
+    const totalWeight = coil.weightKg;
+    const remainingWeight = Math.max(0, totalWeight - deductKg);
+
+    // Remove coil from coils
+    const updatedCoils = state.coils.filter((c) => c.id !== coilId);
+
+    let updatedLoose = [...state.loose];
+    if (remainingWeight > 0) {
+      const newLooseItem: LooseItem = {
+        id: `los-unp-${Date.now()}`,
+        code: `LSE-${coil.code}`,
+        brand: coil.brand,
+        thickness: coil.thickness,
+        diameter: coil.diameter,
+        weightKg: Math.round(remainingWeight * 100) / 100,
+        description: `کلاف باز شده ${coil.code} (کاهش ${deductKg} کیلوگرم) - آماده خورده‌فروشی`,
+        originType: 'opened_coil',
+        entryDate: getPersianDateString(),
+        notes: notes || `برداشت ${deductKg} کیلوگرم و انتقال باقیمانده به خورده‌فروشی`,
+      };
+      updatedLoose.unshift(newLooseItem);
+    }
+
+    const newTx: Transaction = {
+      id: `trx-${Date.now()}`,
+      type: 'reel_unpack',
+      title: `برداشت ${deductKg} کیلوگرم از کلاف ${coil.code} و انتقال باقیمانده به خورده‌فروشی`,
+      category: 'coil',
+      itemsCount: 1,
+      totalWeightKg: deductKg,
+      registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
+      timestamp: getPersianDateTimeString(),
+      details: `از کلاف ${coil.code} مقدار ${deductKg} کیلوگرم برداشت شد و باقیمانده به وزن ${remainingWeight} کیلوگرم به بخش خورده‌فروشی انتقال یافت.`,
+    };
+
+    updatePresentState({
+      ...state,
+      coils: updatedCoils,
+      loose: updatedLoose,
+      transactions: [newTx, ...state.transactions],
+    });
+
+    showToast(`برداشت ${deductKg} کیلوگرم از کلاف با موفقیت انجام شد و باقیمانده به خورده‌فروشی رفت.`, 'success');
+  };
+
+  const deductFromBranchAndMoveToLoose = (branchId: string, deductKg: number, notes?: string) => {
+    const branch = state.branches.find((b) => b.id === branchId);
+    if (!branch || deductKg <= 0) return;
+
+    const totalWeight = branch.totalWeightKg;
+    const remainingWeight = Math.max(0, totalWeight - deductKg);
+
+    // Remove branch from branches
+    const updatedBranches = state.branches.filter((b) => b.id !== branchId);
+
+    let updatedLoose = [...state.loose];
+    if (remainingWeight > 0) {
+      const newLooseItem: LooseItem = {
+        id: `los-unp-${Date.now()}`,
+        code: `LSE-${branch.code}`,
+        brand: branch.brand,
+        thickness: branch.thickness,
+        diameter: branch.diameter,
+        weightKg: Math.round(remainingWeight * 100) / 100,
+        description: `بندیل باز شده ${branch.code} (کاهش ${deductKg} کیلوگرم) - آماده خورده‌فروشی`,
+        originType: 'opened_branch',
+        entryDate: getPersianDateString(),
+        notes: notes || `برداشت ${deductKg} کیلوگرم و انتقال باقیمانده به خورده‌فروشی`,
+      };
+      updatedLoose.unshift(newLooseItem);
+    }
+
+    const newTx: Transaction = {
+      id: `trx-${Date.now()}`,
+      type: 'reel_unpack',
+      title: `برداشت ${deductKg} کیلوگرم از بندیل ${branch.code} و انتقال باقیمانده به خورده‌فروشی`,
+      category: 'branch',
+      itemsCount: 1,
+      totalWeightKg: deductKg,
+      registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+      userRole: currentUser ? (currentUser.role === 'manager' ? 'مدیر' : 'ادمین انبار') : 'مدیر',
+      timestamp: getPersianDateTimeString(),
+      details: `از بندیل ${branch.code} مقدار ${deductKg} کیلوگرم برداشت شد و باقیمانده به وزن ${remainingWeight} کیلوگرم به بخش خورده‌فروشی انتقال یافت.`,
+    };
+
+    updatePresentState({
+      ...state,
+      branches: updatedBranches,
+      loose: updatedLoose,
+      transactions: [newTx, ...state.transactions],
+    });
+
+    showToast(`برداشت ${deductKg} کیلوگرم از بندیل با موفقیت انجام شد و باقیمانده به خورده‌فروشی رفت.`, 'success');
   };
 
   // Add Stock Entry (ورود جدید به انبار)
@@ -2237,8 +2429,12 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         logout,
         unpackPallet,
         unpackReelToLoose,
+        unpackCoilToLoose,
+        unpackBranchToLoose,
         deductFromLooseItem,
         deductFromReelAndMoveToLoose,
+        deductFromCoilAndMoveToLoose,
+        deductFromBranchAndMoveToLoose,
         addStockEntry,
         processStockExitInvoice,
         cancelInvoiceAndReturnToStock,

@@ -129,7 +129,7 @@ export interface LooseItem {
   diameter: Diameter;
   weightKg: number;
   description: string;
-  originType: 'opened_reel' | 'direct_entry' | 'coil_piece';
+  originType: string;
   entryDate: string;
   purchaser?: string;
   notes?: string;

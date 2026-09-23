@@ -27,6 +27,8 @@ import { TransferToConsignmentModal } from './TransferToConsignmentModal';
 import { Handshake } from 'lucide-react';
 import { DeductLooseModal } from './DeductLooseModal';
 import { DeductReelModal } from './DeductReelModal';
+import { DeductCoilModal } from './DeductCoilModal';
+import { DeductBranchModal } from './DeductBranchModal';
 import { ConsignmentsView } from './ConsignmentsView';
 import {
   Brand,
@@ -36,6 +38,8 @@ import {
   SelectedItemForAction,
   LooseItem,
   StandaloneReelItem,
+  CoilItem,
+  BranchItem,
   Invoice,
   THICKNESS_OPTIONS,
   DIAMETER_OPTIONS,
@@ -61,8 +65,12 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const {
     state,
     unpackReelToLoose,
+    unpackCoilToLoose,
+    unpackBranchToLoose,
     deductFromLooseItem,
     deductFromReelAndMoveToLoose,
+    deductFromCoilAndMoveToLoose,
+    deductFromBranchAndMoveToLoose,
     deleteInventoryItem,
     selectedItems,
     toggleSelectItem,
@@ -80,6 +88,10 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
   const [deductLooseModalOpen, setDeductLooseModalOpen] = useState<boolean>(false);
   const [selectedReelItem, setSelectedReelItem] = useState<StandaloneReelItem | null>(null);
   const [deductReelModalOpen, setDeductReelModalOpen] = useState<boolean>(false);
+  const [selectedCoilItem, setSelectedCoilItem] = useState<CoilItem | null>(null);
+  const [deductCoilModalOpen, setDeductCoilModalOpen] = useState<boolean>(false);
+  const [selectedBranchItem, setSelectedBranchItem] = useState<BranchItem | null>(null);
+  const [deductBranchModalOpen, setDeductBranchModalOpen] = useState<boolean>(false);
   const [isConsignmentModalOpen, setIsConsignmentModalOpen] = useState<boolean>(false);
   const [itemToDelete, setItemToDelete] = useState<{ category: Category; id: string; title: string } | null>(null);
   const [isDeletingItem, setIsDeletingItem] = useState(false);
@@ -534,7 +546,7 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <p className="text-xs text-slate-400 mt-1">فیلترها را تغییر دهید یا پالت جدید ثبت کنید.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {filteredPallets.map((pallet) => (
                   <PalletCard
                     key={pallet.id}
@@ -559,21 +571,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3">
                 {filteredReels.map((reel) => {
                   const selected = isSelected(reel.id);
                   return (
                     <div
                       key={reel.id}
-                      className={`bg-white rounded-2xl border transition-all duration-200 p-4 shadow-xs flex flex-col justify-between ${
+                      className={`bg-white rounded-xl border transition-all duration-200 p-3 shadow-xs flex flex-col justify-between ${
                         selected
                           ? 'border-amber-400 ring-2 ring-amber-400/30 bg-amber-50/20'
                           : 'border-slate-200 hover:shadow-md'
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                          <div className="flex items-center space-x-1.5 space-x-reverse min-w-0">
                             <button
                               onClick={() =>
                                 toggleSimpleItem(
@@ -589,18 +601,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
                             >
                               {selected ? (
-                                <CheckSquare className="w-5 h-5 text-amber-600" />
+                                <CheckSquare className="w-4 h-4 text-amber-600" />
                               ) : (
-                                <Square className="w-5 h-5 text-slate-300" />
+                                <Square className="w-4 h-4 text-slate-300" />
                               )}
                             </button>
-                            <span className="font-bold text-sm text-slate-900">
+                            <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
                               {reel.reelCode}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-1 space-x-reverse">
-                            <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-xs">
-                              برند {reel.brand}
+                          <div className="flex items-center space-x-1 space-x-reverse shrink-0">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[9px] sm:text-[10px]">
+                              {reel.brand}
                             </span>
                             <button
                               onClick={() => {
@@ -611,55 +623,48 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="حذف قرقره از انبار"
+                              title="حذف قرقره"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 p-2.5 rounded-xl mb-3">
+                        <div className="grid grid-cols-3 gap-1 text-center text-[11px] bg-slate-50 p-2 rounded-lg mb-2">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">ضخامت</span>
-                            <span className="font-bold text-slate-800">{formatThickness(reel.thickness, unitSettings?.thicknessUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">ضخامت</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatThickness(reel.thickness, unitSettings?.thicknessUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">قطر</span>
-                            <span className="font-bold text-slate-800">{formatDiameter(reel.diameter, unitSettings?.diameterUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">قطر</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatDiameter(reel.diameter, unitSettings?.diameterUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">وزن قرقره</span>
-                            <span className="font-bold text-amber-700">{formatKg(reel.weightKg)}</span>
+                            <span className="text-slate-400 block text-[9px]">وزن</span>
+                            <span className="font-bold text-amber-950 text-[10px] sm:text-xs block">{formatKg(reel.weightKg)}</span>
                           </div>
                         </div>
-
-                        {reel.originPalletCode && (
-                          <p className="text-[11px] text-slate-500 mb-2">
-                            پالت منشاء: <span className="font-semibold text-slate-700">{reel.originPalletCode}</span>
-                          </p>
-                        )}
-                        <p className="text-[11px] text-slate-400 mb-3">{reel.notes}</p>
                       </div>
 
                       {/* Action Buttons for Reel */}
-                      <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
+                      <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-1.5">
                         <button
                           onClick={() => {
                             setSelectedReelItem(reel);
                             setDeductReelModalOpen(true);
                           }}
-                          className="flex items-center justify-center space-x-1 space-x-reverse px-2.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-all shadow-xs cursor-pointer"
                         >
-                          <Scissors className="w-3.5 h-3.5" />
-                          <span>برداشت کیلو / متر</span>
+                          <Scissors className="w-3 h-3" />
+                          <span>برداشت جزئی</span>
                         </button>
 
                         <button
                           onClick={() => unpackReelToLoose(reel.id)}
-                          className="flex items-center justify-center space-x-1 space-x-reverse px-2.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-bold border border-amber-200 transition-all cursor-pointer"
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-[10px] font-black border border-amber-200 transition-all cursor-pointer"
                         >
-                          <ArrowRightLeft className="w-3.5 h-3.5 text-amber-700" />
-                          <span>انتقال کامل به خورده</span>
+                          <ArrowRightLeft className="w-3 h-3 text-amber-700" />
+                          <span>تبدیل به خرده</span>
                         </button>
                       </div>
                     </div>
@@ -679,21 +684,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <p className="font-bold text-sm">هیچ کلاف مس در انبار یافت نشد.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3">
                 {filteredCoils.map((coil) => {
                   const selected = isSelected(coil.id);
                   return (
                     <div
                       key={coil.id}
-                      className={`bg-white rounded-2xl border transition-all duration-200 p-4 shadow-xs flex flex-col justify-between ${
+                      className={`bg-white rounded-xl border transition-all duration-200 p-3 shadow-xs flex flex-col justify-between ${
                         selected
                           ? 'border-amber-400 ring-2 ring-amber-400/30 bg-amber-50/20'
                           : 'border-slate-200 hover:shadow-md'
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                          <div className="flex items-center space-x-1.5 space-x-reverse min-w-0">
                             <button
                               onClick={() =>
                                 toggleSimpleItem(
@@ -709,18 +714,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
                             >
                               {selected ? (
-                                <CheckSquare className="w-5 h-5 text-amber-600" />
+                                <CheckSquare className="w-4 h-4 text-amber-600" />
                               ) : (
-                                <Square className="w-5 h-5 text-slate-300" />
+                                <Square className="w-4 h-4 text-slate-300" />
                               )}
                             </button>
-                            <span className="font-bold text-sm text-slate-900">
+                            <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
                               کلاف {coil.code}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-1 space-x-reverse">
-                            <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-xs">
-                              برند {coil.brand}
+                          <div className="flex items-center space-x-1 space-x-reverse shrink-0">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[9px] sm:text-[10px]">
+                              {coil.brand}
                             </span>
                             <button
                               onClick={() => {
@@ -731,29 +736,51 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="حذف کلاف از انبار"
+                              title="حذف کلاف"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 p-2.5 rounded-xl mb-3">
+                        <div className="grid grid-cols-3 gap-1 text-center text-[11px] bg-slate-50 p-2 rounded-lg">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">ضخامت</span>
-                            <span className="font-bold text-slate-800">{formatThickness(coil.thickness, unitSettings?.thicknessUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">ضخامت</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatThickness(coil.thickness, unitSettings?.thicknessUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">قطر</span>
-                            <span className="font-bold text-slate-800">{formatDiameter(coil.diameter, unitSettings?.diameterUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">قطر</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatDiameter(coil.diameter, unitSettings?.diameterUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">وزن کلاف</span>
-                            <span className="font-bold text-amber-700">{formatKg(coil.weightKg)}</span>
+                            <span className="text-slate-400 block text-[9px]">وزن</span>
+                            <span className="font-bold text-amber-950 text-[10px] sm:text-xs block">{formatKg(coil.weightKg)}</span>
                           </div>
                         </div>
+                      </div>
 
-                        <p className="text-xs text-slate-500 mb-2">{coil.notes || 'کلاف سالم مس'}</p>
+                      {/* Action Buttons for Coil */}
+                      <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-1.5 mt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedCoilItem(coil);
+                            setDeductCoilModalOpen(true);
+                          }}
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-all shadow-xs cursor-pointer"
+                        >
+                          <Scissors className="w-3 h-3" />
+                          <span>برداشت جزئی</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            unpackCoilToLoose(coil.id);
+                          }}
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-[10px] font-black border border-amber-200 transition-all cursor-pointer"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-amber-700" />
+                          <span>تبدیل به خرده</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -772,21 +799,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <p className="font-bold text-sm">هیچ شاخه مس در انبار یافت نشد.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3">
                 {filteredBranches.map((branch) => {
                   const selected = isSelected(branch.id);
                   return (
                     <div
                       key={branch.id}
-                      className={`bg-white rounded-2xl border transition-all duration-200 p-4 shadow-xs flex flex-col justify-between ${
+                      className={`bg-white rounded-xl border transition-all duration-200 p-3 shadow-xs flex flex-col justify-between ${
                         selected
                           ? 'border-amber-400 ring-2 ring-amber-400/30 bg-amber-50/20'
                           : 'border-slate-200 hover:shadow-md'
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                          <div className="flex items-center space-x-1.5 space-x-reverse min-w-0">
                             <button
                               onClick={() =>
                                 toggleSimpleItem(
@@ -802,18 +829,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
                             >
                               {selected ? (
-                                <CheckSquare className="w-5 h-5 text-amber-600" />
+                                <CheckSquare className="w-4 h-4 text-amber-600" />
                               ) : (
-                                <Square className="w-5 h-5 text-slate-300" />
+                                <Square className="w-4 h-4 text-slate-300" />
                               )}
                             </button>
-                            <span className="font-bold text-sm text-slate-900">
+                            <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
                               بندیل {branch.code}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-1 space-x-reverse">
-                            <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-xs">
-                              برند {branch.brand}
+                          <div className="flex items-center space-x-1 space-x-reverse shrink-0">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[9px] sm:text-[10px]">
+                              {branch.brand}
                             </span>
                             <button
                               onClick={() => {
@@ -824,35 +851,57 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="حذف بندیل شاخه از انبار"
+                              title="حذف بندیل شاخه"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 p-2.5 rounded-xl mb-3">
+                         <div className="grid grid-cols-3 gap-1 text-center text-[11px] bg-slate-50 p-2 rounded-lg">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">تعداد شاخه</span>
-                            <span className="font-bold text-slate-800">
-                              {formatPersianNumber(branch.count)} عدد ({branch.lengthMeters}m)
+                            <span className="text-slate-400 block text-[9px]">تعداد</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs block">
+                              {formatPersianNumber(branch.count)} عدد
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">ضخامت / سایز</span>
-                            <span className="font-bold text-slate-800">
-                              {formatThickness(branch.thickness, unitSettings?.thicknessUnit)} / {formatDiameter(branch.diameter, unitSettings?.diameterUnit)}
+                            <span className="text-slate-400 block text-[9px]">ضخامت/سایز</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">
+                              {formatThickness(branch.thickness, unitSettings?.thicknessUnit)}/{formatDiameter(branch.diameter, unitSettings?.diameterUnit)}
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">وزن کل</span>
-                            <span className="font-bold text-amber-700">
+                            <span className="text-slate-400 block text-[9px]">وزن کل</span>
+                            <span className="font-bold text-amber-950 text-[10px] sm:text-xs block">
                               {formatKg(branch.totalWeightKg)}
                             </span>
                           </div>
                         </div>
+                      </div>
 
-                        <p className="text-xs text-slate-500 mb-2">{branch.notes || 'شاخه‌های ۶ متری مس'}</p>
+                      {/* Action Buttons for Branch */}
+                      <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-1.5 mt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedBranchItem(branch);
+                            setDeductBranchModalOpen(true);
+                          }}
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-all shadow-xs cursor-pointer"
+                        >
+                          <Scissors className="w-3 h-3" />
+                          <span>برداشت جزئی</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            unpackBranchToLoose(branch.id);
+                          }}
+                          className="flex items-center justify-center space-x-1 space-x-reverse px-1 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-950 text-[10px] font-black border border-amber-200 transition-all cursor-pointer"
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-amber-700" />
+                          <span>تبدیل به خرده</span>
+                        </button>
                       </div>
                     </div>
                   );
@@ -871,21 +920,21 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 <p className="font-bold text-sm">هیچ آیتم خورده‌فروشی در انبار ثبت نشده است.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3">
                 {filteredLoose.map((item) => {
                   const selected = isSelected(item.id);
                   return (
                     <div
                       key={item.id}
-                      className={`bg-white rounded-2xl border transition-all duration-200 p-4 shadow-xs flex flex-col justify-between ${
+                      className={`bg-white rounded-xl border transition-all duration-200 p-3 shadow-xs flex flex-col justify-between ${
                         selected
                           ? 'border-amber-400 ring-2 ring-amber-400/30 bg-amber-50/20'
                           : 'border-slate-200 hover:shadow-md'
                       }`}
                     >
                       <div>
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
-                          <div className="flex items-center space-x-2 space-x-reverse">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+                          <div className="flex items-center space-x-1.5 space-x-reverse min-w-0">
                             <button
                               onClick={() =>
                                 toggleSimpleItem(
@@ -901,18 +950,18 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                               className="text-amber-600 focus:outline-hidden cursor-pointer"
                             >
                               {selected ? (
-                                <CheckSquare className="w-5 h-5 text-amber-600" />
+                                <CheckSquare className="w-4 h-4 text-amber-600" />
                               ) : (
-                                <Square className="w-5 h-5 text-slate-300" />
+                                <Square className="w-4 h-4 text-slate-300" />
                               )}
                             </button>
-                            <span className="font-bold text-sm text-slate-900">
+                            <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
                               خورده {item.code}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-1 space-x-reverse">
-                            <span className="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold text-xs">
-                              برند {item.brand}
+                          <div className="flex items-center space-x-1 space-x-reverse shrink-0">
+                            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[9px] sm:text-[10px]">
+                              {item.brand}
                             </span>
                             <button
                               onClick={() => {
@@ -923,42 +972,51 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                                 });
                               }}
                               className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              title="حذف آیتم خورده از انبار"
+                              title="حذف آیتم خورده"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 p-2.5 rounded-xl mb-3">
+                        <div className="grid grid-cols-3 gap-1 text-center text-[11px] bg-slate-50 p-2 rounded-lg">
                           <div>
-                            <span className="text-slate-400 block text-[10px]">ضخامت</span>
-                            <span className="font-bold text-slate-800">{formatThickness(item.thickness, unitSettings?.thicknessUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">ضخامت</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatThickness(item.thickness, unitSettings?.thicknessUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">قطر</span>
-                            <span className="font-bold text-slate-800">{formatDiameter(item.diameter, unitSettings?.diameterUnit)}</span>
+                            <span className="text-slate-400 block text-[9px]">قطر</span>
+                            <span className="font-bold text-slate-800 text-[10px] sm:text-xs truncate block">{formatDiameter(item.diameter, unitSettings?.diameterUnit)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400 block text-[10px]">وزن دقیق</span>
-                            <span className="font-bold text-amber-700">{formatKg(item.weightKg)}</span>
+                            <span className="text-slate-400 block text-[9px]">وزن دقیق</span>
+                            <span className="font-bold text-amber-950 text-[10px] sm:text-xs block">{formatKg(item.weightKg)}</span>
                           </div>
                         </div>
 
-                        <p className="text-xs text-slate-700 font-medium mb-2">{item.description}</p>
+                        {item.description && (
+                          <p className="text-[11px] text-slate-600 font-medium mt-2 leading-relaxed bg-amber-50/50 p-1.5 rounded-md border border-amber-100/40">
+                            {item.description}
+                          </p>
+                        )}
+                        {item.notes && (
+                          <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                            یادداشت: {item.notes}
+                          </p>
+                        )}
                       </div>
 
                       {/* Deduct Button for Loose item */}
-                      <div className="pt-3 border-t border-slate-100">
+                      <div className="pt-2 border-t border-slate-100 mt-2">
                         <button
                           onClick={() => {
                             setSelectedLooseItem(item);
                             setDeductLooseModalOpen(true);
                           }}
-                          className="w-full flex items-center justify-center space-x-1.5 space-x-reverse px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                          className="w-full flex items-center justify-center space-x-1.5 space-x-reverse px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black transition-all shadow-xs cursor-pointer"
                         >
-                          <MinusCircle className="w-3.5 h-3.5" />
-                          <span>برداشت / کسر وزن (مثلاً ۵ کیلو)</span>
+                          <MinusCircle className="w-3 h-3" />
+                          <span>برداشت / کسر بار</span>
                         </button>
                       </div>
                     </div>
@@ -1002,6 +1060,34 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
         onConfirm={(deductKg, notes) => {
           if (selectedReelItem) {
             deductFromReelAndMoveToLoose(selectedReelItem.id, deductKg, notes);
+          }
+        }}
+      />
+
+      <DeductCoilModal
+        coil={selectedCoilItem}
+        isOpen={deductCoilModalOpen}
+        onClose={() => {
+          setDeductCoilModalOpen(false);
+          setSelectedCoilItem(null);
+        }}
+        onConfirm={(deductKg, notes) => {
+          if (selectedCoilItem) {
+            deductFromCoilAndMoveToLoose(selectedCoilItem.id, deductKg, notes);
+          }
+        }}
+      />
+
+      <DeductBranchModal
+        branch={selectedBranchItem}
+        isOpen={deductBranchModalOpen}
+        onClose={() => {
+          setDeductBranchModalOpen(false);
+          setSelectedBranchItem(null);
+        }}
+        onConfirm={(deductKg, notes) => {
+          if (selectedBranchItem) {
+            deductFromBranchAndMoveToLoose(selectedBranchItem.id, deductKg, notes);
           }
         }}
       />
