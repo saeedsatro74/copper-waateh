@@ -324,6 +324,19 @@ export interface WarehouseProfile {
   brands?: string[];
 }
 
+export interface Cheque {
+  id: string;
+  amount: number;
+  chequeNumber: string;
+  dueDate: string;
+  bankName: string;
+  isCleared: boolean;
+  clearedAt?: string;
+  partnerAccount: 'partner1' | 'partner2' | 'shared';
+  invoiceNumber: string;
+  customerName: string;
+}
+
 export interface InventoryState {
   pallets: PalletItem[];
   reels: StandaloneReelItem[];
@@ -336,4 +349,5 @@ export interface InventoryState {
   users: User[];
   warehouseProfile: WarehouseProfile;
   balanceAdjustments?: BalanceAdjustmentRecord[];
+  cheques?: Cheque[];
 }

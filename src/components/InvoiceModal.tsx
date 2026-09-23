@@ -66,6 +66,13 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       'بار تحویل داده شده کاملاً طبق مشخصات فوق بوده و مرجوعی فقط تا ۴۸ ساعت با هماهنگی انبار امکان‌پذیر است.'
   );
 
+  // Cheque list states
+  const [chequeList, setChequeList] = useState<{ amount: number; chequeNumber: string; dueDate: string; bankName: string }[]>([]);
+  const [newChequeAmt, setNewChequeAmt] = useState<string>('');
+  const [newChequeNum, setNewChequeNum] = useState<string>('');
+  const [newChequeDue, setNewChequeDue] = useState<string>('');
+  const [newChequeBank, setNewChequeBank] = useState<string>('');
+
   const [generatedInvoice, setGeneratedInvoice] = useState<Invoice | null>(
     invoiceToView || null
   );
@@ -139,7 +146,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       globalPrice,
       notes,
       undefined,
-      itemPricesMap
+      itemPricesMap,
+      undefined,
+      chequeList
     );
 
     // Finalize and close modal immediately!
@@ -166,7 +175,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
       globalPrice,
       notes,
       undefined,
-      itemPricesMap
+      itemPricesMap,
+      undefined,
+      chequeList
     );
 
     setGeneratedInvoice(inv);
@@ -204,7 +215,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
             {activeInvoice && (
               <button
                 onClick={handlePrint}
-                className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-all cursor-pointer"
+                className="flex items-center space-x-1.5 space-x-reverse px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-all cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 <span>چاپ</span>
@@ -319,6 +330,166 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                     className="w-full p-2 sm:p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-800"
                   />
                 </div>
+              </div>
+
+              {/* بخش ثبت نحوه پرداخت (نقد و چک) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <h3 className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    نحوه تسویه و پرداخت فاکتور (نقد / چک)
+                  </h3>
+                  <span className="text-[10px] sm:text-xs text-slate-500 font-medium">
+                    ثبت جزییات رسید نقدی و چک‌های دریافتی مشتری
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* خلاصه پرداخت‌ها */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
+                    <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                      <span>کل مبلغ فاکتور:</span>
+                      <span className="text-slate-900">{formatToman(totalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-bold text-emerald-600 bg-emerald-50/50 p-1.5 rounded-lg">
+                      <span>مبلغ پرداخت نقدی (واریزی):</span>
+                      <span>
+                        {formatToman(
+                          Math.max(0, totalAmount - chequeList.reduce((s, c) => s + c.amount, 0))
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-bold text-amber-700 bg-amber-50/50 p-1.5 rounded-lg">
+                      <span>مجموع چک‌های ثبت شده:</span>
+                      <span>
+                        {formatToman(chequeList.reduce((s, c) => s + c.amount, 0))}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* فرم سریع افزودن چک جدید */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-3">
+                    <h4 className="text-[11px] font-extrabold text-amber-800">
+                      + ثبت مشخصات چک جدید:
+                    </h4>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">مبلغ چک (تومان):</label>
+                        <input
+                          type="number"
+                          placeholder="مثلاً: ۲۰۰۰۰۰۰"
+                          value={newChequeAmt}
+                          onChange={(e) => setNewChequeAmt(e.target.value)}
+                          className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-hidden"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">شماره چک / صیاد:</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: ۱۲۳۴۵۶"
+                          value={newChequeNum}
+                          onChange={(e) => setNewChequeNum(e.target.value)}
+                          className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-hidden"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">بانک صادرکننده:</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: ملی"
+                          value={newChequeBank}
+                          onChange={(e) => setNewChequeBank(e.target.value)}
+                          className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-hidden"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 mb-1">تاریخ سررسید چک:</label>
+                        <input
+                          type="text"
+                          placeholder="مثلاً: ۱۴۰۳/۰۹/۱۵"
+                          value={newChequeDue}
+                          onChange={(e) => setNewChequeDue(e.target.value)}
+                          className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 text-center focus:outline-hidden"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const amt = Number(newChequeAmt);
+                        if (!amt || amt <= 0 || !newChequeNum.trim() || !newChequeDue.trim()) {
+                          alert('لطفاً اطلاعات چک را به طور کامل وارد نمایید.');
+                          return;
+                        }
+                        const totalChequesAmount = chequeList.reduce((s, c) => s + c.amount, 0) + amt;
+                        if (totalChequesAmount > totalAmount) {
+                          alert('خطا: مجموع مبالغ چک‌ها نمی‌تواند بیشتر از مبلغ کل فاکتور باشد!');
+                          return;
+                        }
+                        setChequeList((prev) => [
+                          ...prev,
+                          {
+                            amount: amt,
+                            chequeNumber: newChequeNum.trim(),
+                            dueDate: newChequeDue.trim(),
+                            bankName: newChequeBank.trim() || 'نامشخص',
+                          },
+                        ]);
+                        setNewChequeAmt('');
+                        setNewChequeNum('');
+                        setNewChequeDue('');
+                        setNewChequeBank('');
+                      }}
+                      className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-lg text-xs transition-colors cursor-pointer"
+                    >
+                      ثبت و افزودن چک به فاکتور
+                    </button>
+                  </div>
+                </div>
+
+                {/* لیست چک‌های افزوده شده */}
+                {chequeList.length > 0 && (
+                  <div className="bg-white p-3 rounded-xl border border-slate-200/80">
+                    <h4 className="text-[11px] font-extrabold text-slate-700 mb-2">لیست چک‌های افزوده شده به این فاکتور:</h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-100 text-slate-400">
+                            <th className="pb-1.5 font-bold text-slate-500">شماره چک</th>
+                            <th className="pb-1.5 font-bold text-slate-500">بانک</th>
+                            <th className="pb-1.5 font-bold text-slate-500">تاریخ سررسید</th>
+                            <th className="pb-1.5 font-bold text-slate-500">مبلغ (تومان)</th>
+                            <th className="pb-1.5 font-bold text-center text-slate-500">حذف</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-700 font-bold">
+                          {chequeList.map((ch, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/50">
+                              <td className="py-2">{ch.chequeNumber}</td>
+                              <td className="py-2">{ch.bankName}</td>
+                              <td className="py-2 text-slate-600">{ch.dueDate}</td>
+                              <td className="py-2 text-amber-600">{formatToman(ch.amount)}</td>
+                              <td className="py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setChequeList((prev) => prev.filter((_, i) => i !== idx));
+                                  }}
+                                  className="p-1 hover:bg-red-50 text-red-500 hover:text-red-700 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  حذف
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Profit and Partner Distribution Live Preview */}
@@ -462,7 +633,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 <button
                   type="button"
                   onClick={handleIssueAndPreview}
-                  className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center space-x-1.5 space-x-reverse"
+                  className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center space-x-1.5 space-x-reverse"
                   title="مشاهده ظاهر چاپی فاکتور قبل از خروج"
                 >
                   <Printer className="w-4 h-4" />

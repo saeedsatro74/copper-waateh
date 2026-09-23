@@ -21,7 +21,7 @@ interface PartnerPanelsViewProps {
 }
 
 export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvoice }) => {
-  const { state } = useInventory();
+  const { state, clearCheque } = useInventory();
 
   const [activePanel, setActivePanel] = useState<'partner1' | 'partner2' | 'shared'>('partner1');
 
@@ -166,6 +166,9 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
       : activePanel === 'partner2'
       ? p2SharePercent
       : 100;
+
+  // Filter cheques for the current active account/panel
+  const panelCheques = (state.cheques || []).filter((ch) => ch.partnerAccount === activePanel);
 
   return (
     <div className="space-y-4 text-right">
@@ -458,6 +461,105 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Cheques Section */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden mt-4">
+        <div className="bg-slate-50/80 px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+          <span className="font-black text-xs text-slate-800 flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-amber-600" />
+            <span>چک‌های دریافتی و در جریان وصول پنل {currentActiveData.accName}</span>
+          </span>
+          <span className="text-[10px] text-slate-500 font-bold">
+            در صورت وصول یا پاس شدن زودتر از موعد، تیک تسویه را بزنید تا موجودی نقدی افزایش یابد.
+          </span>
+        </div>
+
+        {panelCheques.length === 0 ? (
+          <div className="text-center py-8 text-slate-400 font-bold text-xs">
+            هیچ چکی برای این پنل ثبت نشده است.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            {/* Desktop Table */}
+            <table className="w-full text-right border-collapse text-xs hidden lg:table">
+              <thead>
+                <tr className="bg-slate-50/70 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
+                  <th className="py-2.5 px-3">شماره چک</th>
+                  <th className="py-2.5 px-3">بانک صادرکننده</th>
+                  <th className="py-2.5 px-3 text-center">تاریخ سررسید</th>
+                  <th className="py-2.5 px-3">مشتری</th>
+                  <th className="py-2.5 px-3">بابت فاکتور</th>
+                  <th className="py-2.5 px-3 text-left">مبلغ (تومان)</th>
+                  <th className="py-2.5 px-3 text-center">وضعیت پاس شدن</th>
+                  <th className="py-2.5 px-3 text-center">عملیات</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {panelCheques.map((ch) => (
+                  <tr key={ch.id} className={`hover:bg-slate-50/50 transition-colors ${ch.isCleared ? 'bg-emerald-50/20' : ''}`}>
+                    <td className="py-2.5 px-3 font-bold text-slate-900">{ch.chequeNumber}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-700">{ch.bankName}</td>
+                    <td className="py-2.5 px-3 text-center font-bold text-slate-600">{ch.dueDate}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{ch.customerName}</td>
+                    <td className="py-2.5 px-3 text-slate-500 font-mono font-bold">{ch.invoiceNumber}</td>
+                    <td className="py-2.5 px-3 text-left font-black text-amber-700">{formatToman(ch.amount)}</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] ${ch.isCleared ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
+                        {ch.isCleared ? 'پاس شده' : 'در جریان وصول'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {!ch.isCleared ? (
+                        <button
+                          onClick={() => clearCheque(ch.id)}
+                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg transition-colors cursor-pointer shadow-xs"
+                        >
+                          تایید پاس شدن
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 text-[10px] font-bold">وصول شده ({ch.clearedAt})</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Mobile View */}
+            <div className="lg:hidden divide-y divide-slate-100">
+              {panelCheques.map((ch) => (
+                <div key={ch.id} className={`p-3 space-y-2 ${ch.isCleared ? 'bg-emerald-50/10' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-slate-900">چک {ch.chequeNumber} - {ch.bankName}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ch.isCleared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {ch.isCleared ? 'پاس شده' : 'در انتظار وصول'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>مشتری: {ch.customerName}</span>
+                    <span>سررسید: <strong className="text-slate-700 font-bold">{ch.dueDate}</strong></span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-bold pt-1">
+                    <span className="text-amber-700">مبلغ: {formatToman(ch.amount)}</span>
+                    <div>
+                      {!ch.isCleared ? (
+                        <button
+                          onClick={() => clearCheque(ch.id)}
+                          className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+                        >
+                          تایید پاس شدن
+                        </button>
+                      ) : (
+                        <span className="text-slate-400 text-[9px] font-bold">وصول شد ({ch.clearedAt})</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
