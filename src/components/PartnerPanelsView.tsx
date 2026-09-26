@@ -21,7 +21,7 @@ interface PartnerPanelsViewProps {
 }
 
 export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvoice }) => {
-  const { state, clearCheque } = useInventory();
+  const { state, clearCheque, updateChequeStatus } = useInventory();
 
   const [activePanel, setActivePanel] = useState<'partner1' | 'partner2' | 'shared'>('partner1');
 
@@ -474,7 +474,7 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
             <span>چک‌های دریافتی و در جریان وصول پنل {currentActiveData.accName}</span>
           </span>
           <span className="text-[10px] text-slate-500 font-bold">
-            در صورت وصول یا پاس شدن زودتر از موعد، تیک تسویه را بزنید تا موجودی نقدی افزایش یابد.
+            وضعیت هر چک را مدیریت کنید؛ تغییر وضعیت به «پاس شده» موجودی نقدی این حساب را افزایش می‌دهد.
           </span>
         </div>
 
@@ -488,78 +488,147 @@ export const PartnerPanelsView: React.FC<PartnerPanelsViewProps> = ({ onViewInvo
             <table className="w-full text-right border-collapse text-xs hidden lg:table">
               <thead>
                 <tr className="bg-slate-50/70 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
-                  <th className="py-2.5 px-3">شماره چک</th>
+                  <th className="py-2.5 px-3">شماره چک / صیاد</th>
                   <th className="py-2.5 px-3">بانک صادرکننده</th>
                   <th className="py-2.5 px-3 text-center">تاریخ سررسید</th>
                   <th className="py-2.5 px-3">مشتری</th>
                   <th className="py-2.5 px-3">بابت فاکتور</th>
                   <th className="py-2.5 px-3 text-left">مبلغ (تومان)</th>
-                  <th className="py-2.5 px-3 text-center">وضعیت پاس شدن</th>
-                  <th className="py-2.5 px-3 text-center">عملیات</th>
+                  <th className="py-2.5 px-3 text-center">وضعیت</th>
+                  <th className="py-2.5 px-3 text-center w-60">عملیات مدیریت چک</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {panelCheques.map((ch) => (
-                  <tr key={ch.id} className={`hover:bg-slate-50/50 transition-colors ${ch.isCleared ? 'bg-emerald-50/20' : ''}`}>
-                    <td className="py-2.5 px-3 font-bold text-slate-900">{ch.chequeNumber}</td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-700">{ch.bankName}</td>
-                    <td className="py-2.5 px-3 text-center font-bold text-slate-600">{ch.dueDate}</td>
-                    <td className="py-2.5 px-3 text-slate-600">{ch.customerName}</td>
-                    <td className="py-2.5 px-3 text-slate-500 font-mono font-bold">{ch.invoiceNumber}</td>
-                    <td className="py-2.5 px-3 text-left font-black text-amber-700">{formatToman(ch.amount)}</td>
-                    <td className="py-2.5 px-3 text-center">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] ${ch.isCleared ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600'}`}>
-                        {ch.isCleared ? 'پاس شده' : 'در جریان وصول'}
-                      </span>
-                    </td>
-                    <td className="py-2.5 px-3 text-center">
-                      {!ch.isCleared ? (
-                        <button
-                          onClick={() => clearCheque(ch.id)}
-                          className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg transition-colors cursor-pointer shadow-xs"
-                        >
-                          تایید پاس شدن
-                        </button>
-                      ) : (
-                        <span className="text-slate-400 text-[10px] font-bold">وصول شده ({ch.clearedAt})</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {panelCheques.map((ch) => {
+                  const chStatus = ch.status || (ch.isCleared ? 'cleared' : 'pending');
+                  return (
+                    <tr key={ch.id} className={`hover:bg-slate-50/50 transition-colors ${chStatus === 'cleared' ? 'bg-emerald-50/10' : chStatus === 'bounced' ? 'bg-rose-50/10' : ''}`}>
+                      <td className="py-2.5 px-3 font-mono font-bold text-slate-900">{ch.chequeNumber}</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-700">{ch.bankName}</td>
+                      <td className="py-2.5 px-3 text-center font-bold text-slate-600">{ch.dueDate}</td>
+                      <td className="py-2.5 px-3 text-slate-600">{ch.customerName}</td>
+                      <td className="py-2.5 px-3 text-slate-500 font-mono font-bold">{ch.invoiceNumber}</td>
+                      <td className="py-2.5 px-3 text-left font-black text-amber-700">{formatToman(ch.amount)}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-[10px] border ${
+                          chStatus === 'cleared'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : chStatus === 'bounced'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : chStatus === 'returned'
+                            ? 'bg-slate-100 text-slate-700 border-slate-300'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>
+                          {chStatus === 'cleared' ? 'وصول شده' : chStatus === 'bounced' ? 'برگشت خورده' : chStatus === 'returned' ? 'عودت داده شده' : 'در جریان وصول'}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        {chStatus === 'pending' ? (
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'cleared')}
+                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer"
+                            >
+                              پاس شد
+                            </button>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'bounced')}
+                              className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer"
+                            >
+                              برگشت چک
+                            </button>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'returned')}
+                              className="px-2 py-1 bg-slate-600 hover:bg-slate-700 text-white font-extrabold text-[10px] rounded-lg transition-colors cursor-pointer"
+                            >
+                              عودت چک
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-slate-400 text-[10px] font-bold">
+                              {chStatus === 'cleared' ? `وصول گردید (${ch.clearedAt || 'ثبت شده'})` : chStatus === 'bounced' ? 'برگشت زده شده' : 'به مشتری عودت شد'}
+                            </span>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'pending')}
+                              className="px-1.5 py-0.5 text-[9px] bg-slate-100 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-500 hover:text-amber-800 rounded font-bold transition-all cursor-pointer mr-2"
+                              title="تغییر وضعیت مجدد جهت اصلاح خطاهای احتمالی"
+                            >
+                              اصلاح وضعیت
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
             {/* Mobile View */}
             <div className="lg:hidden divide-y divide-slate-100">
-              {panelCheques.map((ch) => (
-                <div key={ch.id} className={`p-3 space-y-2 ${ch.isCleared ? 'bg-emerald-50/10' : ''}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-xs text-slate-900">چک {ch.chequeNumber} - {ch.bankName}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ch.isCleared ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                      {ch.isCleared ? 'پاس شده' : 'در انتظار وصول'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span>مشتری: {ch.customerName}</span>
-                    <span>سررسید: <strong className="text-slate-700 font-bold">{ch.dueDate}</strong></span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs font-bold pt-1">
-                    <span className="text-amber-700">مبلغ: {formatToman(ch.amount)}</span>
-                    <div>
-                      {!ch.isCleared ? (
-                        <button
-                          onClick={() => clearCheque(ch.id)}
-                          className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
-                        >
-                          تایید پاس شدن
-                        </button>
-                      ) : (
-                        <span className="text-slate-400 text-[9px] font-bold">وصول شد ({ch.clearedAt})</span>
-                      )}
+              {panelCheques.map((ch) => {
+                const chStatus = ch.status || (ch.isCleared ? 'cleared' : 'pending');
+                return (
+                  <div key={ch.id} className={`p-3 space-y-2 ${chStatus === 'cleared' ? 'bg-emerald-50/10' : chStatus === 'bounced' ? 'bg-rose-50/10' : ''}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-900">چک {ch.chequeNumber} - {ch.bankName}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${
+                        chStatus === 'cleared'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : chStatus === 'bounced'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : chStatus === 'returned'
+                          ? 'bg-slate-100 text-slate-700 border-slate-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                      }`}>
+                        {chStatus === 'cleared' ? 'وصول شده' : chStatus === 'bounced' ? 'برگشت خورده' : chStatus === 'returned' ? 'عودت شده' : 'در انتظار وصول'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>مشتری: {ch.customerName}</span>
+                      <span>سررسید: <strong className="text-slate-700 font-bold">{ch.dueDate}</strong></span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-bold pt-1">
+                      <span className="text-amber-700">مبلغ: {formatToman(ch.amount)}</span>
+                      <div>
+                        {chStatus === 'pending' ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'cleared')}
+                              className="px-2 py-1 bg-emerald-600 text-white text-[9px] font-bold rounded"
+                            >
+                              پاس شد
+                            </button>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'bounced')}
+                              className="px-2 py-1 bg-rose-600 text-white text-[9px] font-bold rounded"
+                            >
+                              برگشت
+                            </button>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'returned')}
+                              className="px-2 py-1 bg-slate-600 text-white text-[9px] font-bold rounded"
+                            >
+                              عودت
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 text-[9px]">ثبت نهایی</span>
+                            <button
+                              onClick={() => updateChequeStatus(ch.id, 'pending')}
+                              className="px-1.5 py-0.5 text-[9px] bg-slate-50 text-slate-600 border border-slate-200 rounded"
+                            >
+                              اصلاح
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

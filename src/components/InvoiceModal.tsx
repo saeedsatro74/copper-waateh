@@ -677,7 +677,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
                 <div className="flex items-center space-x-2 space-x-reverse">
                   <button
                     onClick={onClose}
-                    className="px-4 py-1.5 sm:px-5 sm:py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center space-x-1.5 space-x-reverse"
+                    className="px-4 py-1.5 sm:px-5 sm:py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center space-x-1.5 space-x-reverse"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                     <span>اتمام و بازگشت</span>
@@ -700,9 +700,9 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
         isOpen={isAllocationModalOpen}
         onClose={() => setIsAllocationModalOpen(false)}
         invoice={activeInvoice}
-        onConfirm={(allocation) => {
+        onConfirm={(allocation, chequesList) => {
           if (activeInvoice) {
-            confirmOfficialExitInvoice(activeInvoice.id, allocation);
+            confirmOfficialExitInvoice(activeInvoice.id, allocation, chequesList);
             setIsAllocationModalOpen(false);
             onClose(); // Automatically closes invoice modal and completes the process
           }

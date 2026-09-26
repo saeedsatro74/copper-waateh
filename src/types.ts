@@ -332,6 +332,7 @@ export interface Cheque {
   bankName: string;
   isCleared: boolean;
   clearedAt?: string;
+  status?: 'pending' | 'cleared' | 'bounced' | 'returned';
   partnerAccount: 'partner1' | 'partner2' | 'shared';
   invoiceNumber: string;
   customerName: string;

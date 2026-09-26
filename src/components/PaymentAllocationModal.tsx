@@ -2,16 +2,29 @@ import React, { useState, useEffect } from 'react';
 import {
   X,
   CheckCircle2,
-  Users,
-  CreditCard,
-  Building2,
+  Calendar,
+  Trash2,
+  Plus,
+  Receipt,
   Banknote,
   AlertCircle,
-  Calculator,
+  Building2,
+  User,
+  Users,
 } from 'lucide-react';
 import { useInventory } from '../context/InventoryContext';
 import { Invoice, PaymentAllocation } from '../types';
-import { formatToman } from '../utils/persian';
+import { getPersianDateString } from '../utils/persian';
+
+interface ChequeItem {
+  id: string;
+  amount: number;
+  chequeNumber: string;
+  dueDate: string;
+  bankName: string;
+  customerName: string; // نام صادرکننده / خریدار
+  partnerAccount: 'partner1' | 'partner2' | 'shared'; // به حساب کدام شریک/صندوق برود
+}
 
 interface PaymentAllocationModalProps {
   isOpen: boolean;
@@ -19,8 +32,61 @@ interface PaymentAllocationModalProps {
   invoice: Invoice | null;
   onConfirm: (
     allocation: PaymentAllocation,
-    chequesList?: { amount: number; chequeNumber: string; dueDate: string; bankName: string }[]
+    chequesList?: {
+      amount: number;
+      chequeNumber: string;
+      dueDate: string;
+      bankName: string;
+      customerName?: string;
+      partnerAccount?: 'partner1' | 'partner2' | 'shared';
+    }[]
   ) => void;
+}
+
+// Convert numbers to clean Persian words
+function numberToPersianWords(num: number): string {
+  if (!num || isNaN(num) || num <= 0) return '';
+
+  const yekan = ['', 'یک', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه'];
+  const dahgan = ['', 'ده', 'بیست', 'سی', 'چهل', 'پنجاه', 'شصت', 'هفتاد', 'هشتاد', 'نود'];
+  const sadgan = ['', 'صد', 'دویست', 'سیصد', 'چهارصد', 'پانصد', 'ششصد', 'هفتصد', 'هشتصد', 'نهصد'];
+  const dah = ['ده', 'یازده', 'دوازده', 'سیزده', 'چهارده', 'پانزده', 'شانزده', 'هفده', 'هجده', 'نوزده'];
+  const steps = ['', 'هزار', 'میلیون', 'میلیارد', 'تریلیون'];
+
+  const convertThreeDigits = (n: number): string => {
+    if (n === 0) return '';
+    const parts: string[] = [];
+    const s = Math.floor(n / 100);
+    const d = Math.floor((n % 100) / 10);
+    const y = n % 10;
+
+    if (s > 0) parts.push(sadgan[s]);
+
+    if (d === 1) {
+      parts.push(dah[y]);
+    } else {
+      if (d > 0) parts.push(dahgan[d]);
+      if (y > 0) parts.push(yekan[y]);
+    }
+    return parts.join(' و ');
+  };
+
+  const result: string[] = [];
+  let stepIdx = 0;
+  let remaining = Math.floor(num);
+
+  while (remaining > 0) {
+    const chunk = remaining % 1000;
+    if (chunk > 0) {
+      const chunkStr = convertThreeDigits(chunk);
+      const stepStr = steps[stepIdx] ? ` ${steps[stepIdx]}` : '';
+      result.unshift(chunkStr + stepStr);
+    }
+    remaining = Math.floor(remaining / 1000);
+    stepIdx++;
+  }
+
+  return result.join(' و ');
 }
 
 export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
@@ -37,483 +103,562 @@ export const PaymentAllocationModal: React.FC<PaymentAllocationModalProps> = ({
     partner1SharePercent: 50,
     partner2SharePercent: 50,
   };
+  const p1Name = partnerInfo.partner1Name || 'شریک اول';
+  const p2Name = partnerInfo.partner2Name || 'شریک دوم';
 
   const totalAmount = invoice ? invoice.totalAmount : 0;
 
-  // Paid amount input
-  const [paidAmountInput, setPaidAmountInput] = useState<number>(totalAmount);
-  
-  // Manual amounts for 3 accounts
-  const [p1AmountInput, setP1AmountInput] = useState<number>(totalAmount / 2);
-  const [p2AmountInput, setP2AmountInput] = useState<number>(totalAmount / 2);
-  const [sharedAmountInput, setSharedAmountInput] = useState<number>(0);
+  // Cash payment amount
+  const [cashAmount, setCashAmount] = useState<number>(totalAmount);
 
-  const [paymentMethod, setPaymentMethod] = useState<
-    'cash' | 'card' | 'bank_transfer' | 'cheque' | 'shared_account'
-  >('shared_account');
+  // Cash receiver account: 'shared' | 'partner1' | 'partner2' | 'split_50_50'
+  const [cashReceiver, setCashReceiver] = useState<'shared' | 'partner1' | 'partner2' | 'split_50_50'>('shared');
 
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [notes, setNotes] = useState('');
+  // Cheques list
+  const [cheques, setCheques] = useState<ChequeItem[]>([]);
 
-  // Cheques inputs states
-  const [chequeList, setChequeList] = useState<{ amount: number; chequeNumber: string; dueDate: string; bankName: string }[]>([]);
-  const [newChequeAmt, setNewChequeAmt] = useState<string>('');
-  const [newChequeNum, setNewChequeNum] = useState<string>('');
-  const [newChequeDue, setNewChequeDue] = useState<string>('');
-  const [newChequeBank, setNewChequeBank] = useState<string>('');
+  // Two-way auto-sync toggle (Active by default)
+  const [autoSync, setAutoSync] = useState<boolean>(true);
 
-  // Update defaults when modal opens for invoice
+  // Optional notes
+  const [notes, setNotes] = useState<string>('');
+
+  // Initialize or reset when modal opens
   useEffect(() => {
-    if (invoice) {
+    if (invoice && isOpen) {
       const initialPaid = invoice.paidAmount ?? invoice.totalAmount;
-      setPaidAmountInput(initialPaid);
+      setCashAmount(initialPaid);
+      setCashReceiver('shared');
 
-      if (invoice.paymentAllocation) {
-        setP1AmountInput(invoice.paymentAllocation.partner1Amount || 0);
-        setP2AmountInput(invoice.paymentAllocation.partner2Amount || 0);
-        setSharedAmountInput(invoice.paymentAllocation.sharedAmount || 0);
-        setPaymentMethod(invoice.paymentAllocation.paymentMethod || 'shared_account');
-        setTrackingNumber(invoice.paymentAllocation.trackingNumber || '');
-        setNotes(invoice.paymentAllocation.notes || '');
-      } else {
-        // Default to shared account or 50/50
-        setP1AmountInput(initialPaid / 2);
-        setP2AmountInput(initialPaid / 2);
-        setSharedAmountInput(0);
-      }
+      // Start with 1 cheque slot ready pre-filled with customer name
+      setCheques([
+        {
+          id: `chq-${Date.now()}`,
+          amount: 0,
+          chequeNumber: '',
+          dueDate: '',
+          bankName: '',
+          customerName: invoice.customerName || '',
+          partnerAccount: 'shared',
+        },
+      ]);
+      setAutoSync(true);
+      setNotes(invoice.paymentAllocation?.notes || '');
     }
   }, [invoice, isOpen]);
 
   if (!isOpen || !invoice) return null;
 
-  const remainingAmount = Math.max(0, totalAmount - (paidAmountInput || 0));
-  const currentAllocatedTotal = (p1AmountInput || 0) + (p2AmountInput || 0) + (sharedAmountInput || 0);
-  const allocationDiff = (paidAmountInput || 0) - currentAllocatedTotal;
+  const totalChequesAmount = cheques.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const totalReceived = (Number(cashAmount) || 0) + totalChequesAmount;
+  const diffFromTotal = totalAmount - totalReceived;
 
-  // Quick allocation buttons
-  const handlePresetAllocation = (type: 'split_50_50' | 'shared' | 'partner1' | 'partner2') => {
-    const paid = paidAmountInput || 0;
-    if (type === 'split_50_50') {
-      setP1AmountInput(paid / 2);
-      setP2AmountInput(paid / 2);
-      setSharedAmountInput(0);
-    } else if (type === 'shared') {
-      setP1AmountInput(0);
-      setP2AmountInput(0);
-      setSharedAmountInput(paid);
-    } else if (type === 'partner1') {
-      setP1AmountInput(paid);
-      setP2AmountInput(0);
-      setSharedAmountInput(0);
-    } else if (type === 'partner2') {
-      setP1AmountInput(0);
-      setP2AmountInput(paid);
-      setSharedAmountInput(0);
+  // Handle cash change with two-way sync
+  const handleCashChange = (newVal: number) => {
+    const safeCash = Math.max(0, newVal);
+    setCashAmount(safeCash);
+
+    if (autoSync) {
+      const remainingForCheques = Math.max(0, totalAmount - safeCash);
+      if (cheques.length === 0) {
+        if (remainingForCheques > 0) {
+          setCheques([
+            {
+              id: `chq-${Date.now()}`,
+              amount: remainingForCheques,
+              chequeNumber: '',
+              dueDate: '',
+              bankName: '',
+              customerName: invoice.customerName || '',
+              partnerAccount: 'shared',
+            },
+          ]);
+        }
+      } else {
+        // Adjust the last cheque to balance the total
+        const otherChequesSum = cheques.slice(0, -1).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+        const lastChequeAmount = Math.max(0, remainingForCheques - otherChequesSum);
+        setCheques((prev) =>
+          prev.map((c, idx) => (idx === prev.length - 1 ? { ...c, amount: lastChequeAmount } : c))
+        );
+      }
     }
   };
 
+  // Handle individual cheque amount change with two-way sync
+  const handleChequeAmountChange = (idx: number, newAmt: number) => {
+    const safeAmt = Math.max(0, newAmt);
+    const updated = cheques.map((c, i) => (i === idx ? { ...c, amount: safeAmt } : c));
+    setCheques(updated);
+
+    if (autoSync) {
+      const newTotalCheques = updated.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+      setCashAmount(Math.max(0, totalAmount - newTotalCheques));
+    }
+  };
+
+  // Add another cheque
+  const handleAddCheque = () => {
+    const newCheque: ChequeItem = {
+      id: `chq-${Date.now()}-${cheques.length}`,
+      amount: 0,
+      chequeNumber: '',
+      dueDate: '',
+      bankName: '',
+      customerName: invoice.customerName || '',
+      partnerAccount: 'shared',
+    };
+    setCheques((prev) => [...prev, newCheque]);
+  };
+
+  // Remove a cheque
+  const handleRemoveCheque = (idx: number) => {
+    const removedChequeAmt = Number(cheques[idx]?.amount) || 0;
+    const updated = cheques.filter((_, i) => i !== idx);
+    setCheques(updated);
+
+    if (autoSync) {
+      setCashAmount((prev) => prev + removedChequeAmt);
+    }
+  };
+
+  // Form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Only include cheques with amount > 0
+    const validCheques = cheques
+      .filter((c) => Number(c.amount) > 0)
+      .map((c) => ({
+        amount: Number(c.amount),
+        chequeNumber: c.chequeNumber.trim() || 'ثبت نشده',
+        dueDate: c.dueDate.trim() || 'تعیین نشده',
+        bankName: c.bankName.trim() || 'بانک مشتری',
+        customerName: c.customerName.trim() || invoice.customerName || 'مشتری متفرقه',
+        partnerAccount: c.partnerAccount || 'shared',
+      }));
+
+    // Calculate cash shares based on chosen account
+    let p1Cash = 0;
+    let p2Cash = 0;
+    let shCash = 0;
+
+    if (cashReceiver === 'partner1') {
+      p1Cash = cashAmount;
+    } else if (cashReceiver === 'partner2') {
+      p2Cash = cashAmount;
+    } else if (cashReceiver === 'split_50_50') {
+      p1Cash = Math.round(cashAmount / 2);
+      p2Cash = Math.round(cashAmount / 2);
+    } else {
+      shCash = cashAmount;
+    }
+
     const allocation: PaymentAllocation = {
-      paymentMethod,
-      trackingNumber: trackingNumber.trim(),
-      receiverPartner: 'manual',
-      partner1Amount: p1AmountInput || 0,
-      partner2Amount: p2AmountInput || 0,
-      sharedAmount: sharedAmountInput || 0,
-      partner1Percent: paidAmountInput ? Math.round(((p1AmountInput || 0) / paidAmountInput) * 100) : 0,
-      partner2Percent: paidAmountInput ? Math.round(((p2AmountInput || 0) / paidAmountInput) * 100) : 0,
+      paymentMethod: validCheques.length > 0 ? 'cheque' : 'cash',
+      trackingNumber: '',
+      receiverPartner: cashReceiver,
+      partner1Amount: p1Cash,
+      partner2Amount: p2Cash,
+      sharedAmount: shCash,
+      partner1Percent: cashAmount > 0 ? Math.round((p1Cash / cashAmount) * 100) : 0,
+      partner2Percent: cashAmount > 0 ? Math.round((p2Cash / cashAmount) * 100) : 0,
       notes: notes.trim(),
-      paidAt: new Date().toLocaleDateString('fa-IR'),
+      paidAt: getPersianDateString(),
     };
 
-    onConfirm(allocation, chequeList);
+    onConfirm(allocation, validCheques);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-xl w-full p-4 sm:p-6 my-auto text-right animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-2xl w-full p-5 sm:p-7 my-auto text-right animate-in fade-in zoom-in-95 duration-200">
+        
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-          <div className="flex items-center space-x-2.5 space-x-reverse">
-            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center border border-amber-200 shadow-xs">
-              <Users className="w-5 h-5 text-amber-700" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900">
-                ثبت دریافت وجه و تخصیص به ۳ حساب
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                فاکتور شماره {invoice.invoiceNumber} - خریدار: <span className="font-bold text-slate-800">{invoice.customerName}</span>
-              </p>
-            </div>
+          <div>
+            <h2 className="text-base sm:text-lg font-black text-slate-900">
+              تسویه حساب فاکتور {invoice.officialInvoiceNumber || invoice.invoiceNumber}
+            </h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              مشتری: <span className="font-bold text-slate-800">{invoice.customerName}</span>
+            </p>
           </div>
           <button
             onClick={onClose}
             className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+            title="بستن پنجره"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-          {/* Invoice Financial Summary Card */}
-          <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-2 text-xs shadow-md">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <span className="text-slate-300 font-medium">مبلغ کل فاکتور:</span>
-              <span className="text-base font-black text-amber-400">
-                {totalAmount.toLocaleString('fa-IR')} تومان
+        <form onSubmit={handleSubmit} className="mt-5 space-y-5 text-xs">
+          
+          {/* Top Banner: Total Invoice Amount with Persian Words */}
+          <div className="bg-amber-500/10 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-[11px] font-bold text-slate-600 block">مبلغ کل فاکتور:</span>
+              <span className="text-xl sm:text-2xl font-black text-amber-900 dir-ltr inline-block">
+                {totalAmount.toLocaleString('fa-IR')} <span className="text-xs font-bold text-amber-700">تومان</span>
+              </span>
+              <span className="text-[11px] text-amber-800 font-bold block mt-0.5">
+                ({numberToPersianWords(totalAmount)} تومان)
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  مبلغ دریافتی / پرداختی خریدار (تومان):
-                </label>
+            {/* Auto-Sync Toggle */}
+            <div className="flex items-center gap-2 bg-white/80 border border-amber-200/80 px-3 py-2 rounded-xl shrink-0">
+              <label className="text-[11px] font-bold text-slate-700 cursor-pointer flex items-center gap-1.5 select-none">
                 <input
-                  type="number"
-                  value={paidAmountInput || ''}
-                  onChange={(e) => {
-                    const val = Number(e.target.value) || 0;
-                    setPaidAmountInput(val);
-                  }}
-                  className="w-full p-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-bold text-xs text-left text-amber-300 focus:outline-none focus:border-amber-500"
-                  placeholder="مبلغ پرداختی"
+                  type="checkbox"
+                  checked={autoSync}
+                  onChange={(e) => setAutoSync(e.target.checked)}
+                  className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 border-slate-300 cursor-pointer"
                 />
-              </div>
+                <span>هماهنگی خودکار نقد و چک (سینک)</span>
+              </label>
+            </div>
+          </div>
 
-              <div className="bg-slate-800/80 p-2 rounded-xl border border-slate-700/80 flex flex-col justify-center">
-                <span className="text-[10px] text-slate-400 font-medium">مانده بدهی فاکتور:</span>
-                <span className={`text-xs font-black ${remainingAmount > 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                  {remainingAmount.toLocaleString('fa-IR')} تومان
+          {/* Section 1: Cash Payment */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <label className="block text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <Banknote className="w-4 h-4 text-emerald-600" />
+                <span>مبلغ پرداخت نقدی (تومان):</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => handleCashChange(totalAmount)}
+                className="text-[10px] font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                title="تمام مبلغ نقدی پرداخت شود"
+              >
+                پرداخت تماماً نقدی
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={cashAmount === 0 ? '' : cashAmount}
+                onChange={(e) => handleCashChange(Number(e.target.value) || 0)}
+                placeholder="مبلغ پرداختی نقدی..."
+                className="w-full p-3 bg-white border border-slate-300 rounded-xl font-black text-sm text-left text-slate-900 pl-16 focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 focus:outline-none"
+              />
+              <span className="absolute left-3 top-3 text-xs text-slate-400 font-bold">تومان</span>
+            </div>
+
+            {/* Live divider & Persian words badge */}
+            {cashAmount > 0 && (
+              <div className="text-[11px] font-bold text-emerald-800 flex flex-wrap items-center justify-between gap-1 pt-0.5">
+                <span>معادل: {numberToPersianWords(cashAmount)} تومان</span>
+                <span className="dir-ltr font-black text-slate-700">
+                  {cashAmount.toLocaleString('fa-IR')} تومان
                 </span>
               </div>
+            )}
+
+            {/* Cash Receiver Account Selector */}
+            <div className="pt-2 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <span className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1">
+                <Building2 className="w-3.5 h-3.5 text-amber-600" />
+                واریز نقدی به حساب کدام شریک یا صندوق برود؟
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCashReceiver('shared')}
+                  className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer truncate ${
+                    cashReceiver === 'shared'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  حساب مشترک
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCashReceiver('partner1')}
+                  className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer truncate ${
+                    cashReceiver === 'partner1'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {p1Name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCashReceiver('partner2')}
+                  className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer truncate ${
+                    cashReceiver === 'partner2'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {p2Name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCashReceiver('split_50_50')}
+                  className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition-all cursor-pointer truncate ${
+                    cashReceiver === 'split_50_50'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  نصف / نصف
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Preset Buttons for Quick Allocation */}
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1.5">
-              میانبرهای تقسیم سریع واریزی:
-            </label>
-            <div className="grid grid-cols-3 gap-2 text-[11px] font-bold">
-              <button
-                type="button"
-                onClick={() => handlePresetAllocation('shared')}
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs"
-              >
-                تماماً حساب مشترک
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePresetAllocation('partner1')}
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs truncate"
-              >
-                تماماً {partnerInfo.partner1Name}
-              </button>
-              <button
-                type="button"
-                onClick={() => handlePresetAllocation('partner2')}
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 hover:text-amber-900 text-slate-700 text-center transition-all cursor-pointer text-xs truncate"
-              >
-                تماماً {partnerInfo.partner2Name}
-              </button>
-            </div>
-          </div>
-
-          {/* Manual Amounts for 3 Accounts */}
-          <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200/80 space-y-3">
+          {/* Section 2: Cheques Section */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-black text-amber-950 flex items-center space-x-1 space-x-reverse">
-                <Calculator className="w-4 h-4 text-amber-700" />
-                <span>ورود دستی سهم ۳ حساب (به تومان):</span>
-              </h3>
-              {allocationDiff !== 0 && (
-                <span className={`text-[11px] font-bold ${allocationDiff < 0 ? 'text-rose-600' : 'text-amber-700'}`}>
-                  {allocationDiff > 0 ? `اختصاص داده نشده: ${allocationDiff.toLocaleString('fa-IR')}` : `اضافه تخصیص: ${Math.abs(allocationDiff).toLocaleString('fa-IR')}`}
+              <label className="block text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <Receipt className="w-4 h-4 text-amber-600" />
+                <span>چک‌های دریافتی مشتری:</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleAddCheque}
+                className="flex items-center gap-1 text-[11px] font-black text-white bg-amber-600 hover:bg-amber-700 px-2.5 py-1 rounded-xl transition-all cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>افزودن چک دیگر</span>
+              </button>
+            </div>
+
+            {/* List of Cheques */}
+            <div className="space-y-3">
+              {cheques.map((ch, idx) => (
+                <div
+                  key={ch.id}
+                  className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3 shadow-xs transition-all"
+                >
+                  {/* Cheque Card Header */}
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                    <span className="font-extrabold text-[11px] text-slate-700 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 inline-block"></span>
+                      مشخصات چک {idx + 1}:
+                    </span>
+                    {cheques.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCheque(idx)}
+                        className="text-rose-600 hover:text-rose-800 hover:bg-rose-50 p-1 rounded-lg transition-colors cursor-pointer"
+                        title="حذف این چک"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Cheque Fields Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Cheque Amount Input */}
+                    <div className="sm:col-span-1">
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        مبلغ چک (تومان):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={ch.amount === 0 ? '' : ch.amount}
+                          onChange={(e) => handleChequeAmountChange(idx, Number(e.target.value) || 0)}
+                          placeholder="مبلغ چک..."
+                          className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-black text-xs text-left text-slate-900 pl-12 focus:ring-2 focus:ring-amber-500/20 focus:outline-none"
+                        />
+                        <span className="absolute left-2 top-2 text-[10px] text-slate-400 font-bold">تومان</span>
+                      </div>
+                    </div>
+
+                    {/* Due Date */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        تاریخ سررسید چک:
+                      </label>
+                      <input
+                        type="text"
+                        value={ch.dueDate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCheques((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, dueDate: val } : item))
+                          );
+                        }}
+                        placeholder="مثلاً: ۱۴۰۳/۱۰/۱۵"
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs text-center text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Partner Account Destination */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        واریز چک به حساب کدام شریک؟
+                      </label>
+                      <select
+                        value={ch.partnerAccount}
+                        onChange={(e: any) => {
+                          const val = e.target.value;
+                          setCheques((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, partnerAccount: val } : item))
+                          );
+                        }}
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs text-slate-800 focus:outline-none"
+                      >
+                        <option value="shared">حساب مشترک انبار</option>
+                        <option value="partner1">{p1Name}</option>
+                        <option value="partner2">{p2Name}</option>
+                      </select>
+                    </div>
+
+                    {/* Customer Name / Cheque Issuer */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        نام صاحب چک / خریدار:
+                      </label>
+                      <input
+                        type="text"
+                        value={ch.customerName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCheques((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, customerName: val } : item))
+                          );
+                        }}
+                        placeholder="نام صاحب چک یا خریدار..."
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Cheque No */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        شماره صیاد / چک:
+                      </label>
+                      <input
+                        type="text"
+                        value={ch.chequeNumber}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCheques((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, chequeNumber: val } : item))
+                          );
+                        }}
+                        placeholder="شماره ۱۶ رقمی صیادی..."
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Bank Name */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                        بانک صادرکننده:
+                      </label>
+                      <input
+                        type="text"
+                        value={ch.bankName}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCheques((prev) =>
+                            prev.map((item, i) => (i === idx ? { ...item, bankName: val } : item))
+                          );
+                        }}
+                        placeholder="مثلاً: ملی، صادرات..."
+                        className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs text-slate-800 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live cheque divider & words */}
+                  {ch.amount > 0 && (
+                    <div className="bg-amber-50/60 border border-amber-200/50 p-2 rounded-lg text-[10px] flex flex-wrap items-center justify-between gap-1 text-amber-950 font-bold">
+                      <span>معادل: {numberToPersianWords(ch.amount)} تومان</span>
+                      <span className="dir-ltr text-amber-900 font-black">
+                        {ch.amount.toLocaleString('fa-IR')} تومان
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Bottom Live Balance Summary */}
+          <div className="bg-slate-100 border border-slate-200 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-4 text-slate-700 font-bold">
+              <span>
+                نقد: <strong className="text-slate-900 font-black">{cashAmount.toLocaleString('fa-IR')}</strong> تومان
+              </span>
+              <span>+</span>
+              <span>
+                چک: <strong className="text-slate-900 font-black">{totalChequesAmount.toLocaleString('fa-IR')}</strong> تومان
+              </span>
+              <span>=</span>
+              <span>
+                مجموع دریافتی:{' '}
+                <strong className="text-emerald-700 font-black text-sm">
+                  {totalReceived.toLocaleString('fa-IR')}
+                </strong>{' '}
+                تومان
+              </span>
+            </div>
+
+            {/* Status indicator */}
+            <div>
+              {diffFromTotal === 0 ? (
+                <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 font-black px-2.5 py-1 rounded-xl text-[11px] border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>تسویه کامل ۱۰۰٪</span>
+                </span>
+              ) : diffFromTotal > 0 ? (
+                <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-800 font-black px-2.5 py-1 rounded-xl text-[11px] border border-rose-200">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>مانده بدهی مشتری: {diffFromTotal.toLocaleString('fa-IR')} تومان</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-black px-2.5 py-1 rounded-xl text-[11px] border border-amber-200">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>اضافه پرداختی: {Math.abs(diffFromTotal).toLocaleString('fa-IR')} تومان</span>
                 </span>
               )}
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* Admin 1 */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1 truncate">
-                  سهم {partnerInfo.partner1Name}:
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={p1AmountInput || ''}
-                    onChange={(e) => setP1AmountInput(Number(e.target.value) || 0)}
-                    className="w-full p-2 text-xs font-bold text-slate-900 bg-white rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 text-left pl-7"
-                    placeholder="0"
-                  />
-                  <span className="absolute left-2 top-2 text-[10px] text-slate-400 font-medium">تومان</span>
-                </div>
-              </div>
-
-              {/* Admin 2 */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1 truncate">
-                  سهم {partnerInfo.partner2Name}:
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={p2AmountInput || ''}
-                    onChange={(e) => setP2AmountInput(Number(e.target.value) || 0)}
-                    className="w-full p-2 text-xs font-bold text-slate-900 bg-white rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 text-left pl-7"
-                    placeholder="0"
-                  />
-                  <span className="absolute left-2 top-2 text-[10px] text-slate-400 font-medium">تومان</span>
-                </div>
-              </div>
-
-              {/* Shared Account */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1 truncate">
-                  سهم حساب مشترک:
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={sharedAmountInput || ''}
-                    onChange={(e) => setSharedAmountInput(Number(e.target.value) || 0)}
-                    className="w-full p-2 text-xs font-bold text-slate-900 bg-white rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 text-left pl-7"
-                    placeholder="0"
-                  />
-                  <span className="absolute left-2 top-2 text-[10px] text-slate-400 font-medium">تومان</span>
-                </div>
-              </div>
-            </div>
           </div>
 
-          {/* Payment Method & Tracking Number */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                روش واریز / پرداخت:
-              </label>
-              <select
-                value={paymentMethod}
-                onChange={(e: any) => setPaymentMethod(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              >
-                <option value="shared_account">حساب بانکی مشترک شراکت</option>
-                <option value="card">کارت به کارت مستقیم</option>
-                <option value="bank_transfer">حواله پایا / ساتنا</option>
-                <option value="cheque">چک صیادی / فیش بانکی</option>
-                <option value="cash">نقدی / حساب صندوق</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                شماره پیگیری / فیش / چک:
-              </label>
-              <input
-                type="text"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                placeholder="مثلا: ۹۸۴۵۱۲۹۹۰۱"
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-            </div>
-          </div>
-
-          {/* Notes */}
+          {/* Optional Notes */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              توضیحات و ملاحظات تسویه:
-            </label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="مثلا: واریز نقدی ۵۰ میلیون به شریک اول و مابقی به شریک دوم"
-              className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+              placeholder="توضیحات و ملاحظات تسویه (اختیاری)..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:bg-white"
             />
           </div>
 
-          {/* بخش ثبت چک‌های دریافتی فاکتور */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-4 text-right">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-2 flex-wrap gap-2">
-              <h3 className="text-xs sm:text-sm font-black text-slate-800 flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>
-                ثبت چک‌های دریافتی از مشتری برای فاکتور رسمی
-              </h3>
-              <span className="text-[10px] text-slate-500 font-medium">
-                (مبلغ چک‌ها از موجودی نقدی شریک کسر می‌شود)
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* خلاصه پرداخت‌ها */}
-              <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                  <span>کل مبلغ فاکتور:</span>
-                  <span className="text-slate-900">{formatToman(totalAmount)}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs font-bold text-emerald-600 bg-emerald-50/50 p-1.5 rounded-lg">
-                  <span>مبلغ پرداخت نقدی (واریزی):</span>
-                  <span>
-                    {formatToman(
-                      Math.max(0, (paidAmountInput || 0) - chequeList.reduce((s, c) => s + c.amount, 0))
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs font-bold text-amber-700 bg-amber-50/50 p-1.5 rounded-lg">
-                  <span>مجموع چک‌های ثبت شده:</span>
-                  <span>
-                    {formatToman(chequeList.reduce((s, c) => s + c.amount, 0))}
-                  </span>
-                </div>
-              </div>
-
-              {/* فرم سریع افزودن چک جدید */}
-              <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-3">
-                <h4 className="text-[11px] font-extrabold text-amber-800">
-                  + ثبت مشخصات چک جدید:
-                </h4>
-                
-                <div className="grid grid-cols-2 gap-2 text-right">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-1">مبلغ چک (تومان):</label>
-                    <input
-                      type="number"
-                      placeholder="مثلاً: ۲۰۰۰۰۰۰"
-                      value={newChequeAmt}
-                      onChange={(e) => setNewChequeAmt(e.target.value)}
-                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-1">شماره چک / صیاد:</label>
-                    <input
-                      type="text"
-                      placeholder="مثلاً: ۱۲۳۴۵۶"
-                      value={newChequeNum}
-                      onChange={(e) => setNewChequeNum(e.target.value)}
-                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-1">بانک صادرکننده:</label>
-                    <input
-                      type="text"
-                      placeholder="مثلاً: ملی"
-                      value={newChequeBank}
-                      onChange={(e) => setNewChequeBank(e.target.value)}
-                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 mb-1">تاریخ سررسید چک:</label>
-                    <input
-                      type="text"
-                      placeholder="مثلاً: ۱۴۰۳/۰۹/۱۵"
-                      value={newChequeDue}
-                      onChange={(e) => setNewChequeDue(e.target.value)}
-                      className="w-full p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-800 text-center focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const amt = Number(newChequeAmt);
-                    if (!amt || amt <= 0 || !newChequeNum.trim() || !newChequeDue.trim()) {
-                      alert('لطفاً اطلاعات چک را به طور کامل وارد نمایید.');
-                      return;
-                    }
-                    const totalChequesAmount = chequeList.reduce((s, c) => s + c.amount, 0) + amt;
-                    if (totalChequesAmount > totalAmount) {
-                      alert('خطا: مجموع مبالغ چک‌ها نمی‌تواند بیشتر از مبلغ کل فاکتور باشد!');
-                      return;
-                    }
-                    setChequeList((prev) => [
-                      ...prev,
-                      {
-                        amount: amt,
-                        chequeNumber: newChequeNum.trim(),
-                        dueDate: newChequeDue.trim(),
-                        bankName: newChequeBank.trim() || 'نامشخص',
-                      },
-                    ]);
-                    setNewChequeAmt('');
-                    setNewChequeNum('');
-                    setNewChequeDue('');
-                    setNewChequeBank('');
-                  }}
-                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-lg text-[11px] transition-colors cursor-pointer"
-                >
-                  ثبت و افزودن چک به فاکتور رسمی
-                </button>
-              </div>
-            </div>
-
-            {/* لیست چک‌های افزوده شده */}
-            {chequeList.length > 0 && (
-              <div className="bg-white p-3 rounded-xl border border-slate-200/80">
-                <h4 className="text-[11px] font-extrabold text-slate-700 mb-2">لیست چک‌های افزوده شده به این فاکتور:</h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-slate-400">
-                        <th className="pb-1.5 font-bold text-slate-500">شماره چک</th>
-                        <th className="pb-1.5 font-bold text-slate-500">بانک</th>
-                        <th className="pb-1.5 font-bold text-slate-500">تاریخ سررسید</th>
-                        <th className="pb-1.5 font-bold text-slate-500">مبلغ (تومان)</th>
-                        <th className="pb-1.5 font-bold text-center text-slate-500">حذف</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700 font-bold">
-                      {chequeList.map((ch, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50">
-                          <td className="py-2">{ch.chequeNumber}</td>
-                          <td className="py-2">{ch.bankName}</td>
-                          <td className="py-2 text-slate-600">{ch.dueDate}</td>
-                          <td className="py-2 text-amber-600">{formatToman(ch.amount)}</td>
-                          <td className="py-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChequeList((prev) => prev.filter((_, i) => i !== idx));
-                              }}
-                              className="p-1 hover:bg-red-50 text-red-500 hover:text-red-700 rounded-lg transition-colors cursor-pointer"
-                            >
-                              حذف
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Buttons */}
-          <div className="flex items-center justify-end space-x-2 space-x-reverse pt-3 border-t border-slate-100">
+          {/* Footer Buttons */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
+              className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 transition-colors cursor-pointer text-xs"
             >
               انصراف
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center space-x-1.5 space-x-reverse"
+              className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>ثبت و صدور فاکتور رسمی خروج</span>
+              <span>تایید و صدور فاکتور رسمی</span>
             </button>
           </div>
         </form>

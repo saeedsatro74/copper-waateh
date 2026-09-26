@@ -19,6 +19,7 @@ import {
   PaymentAllocation,
   PartnerInfo,
   BalanceAdjustmentRecord,
+  Cheque,
 } from '../types';
 import { initialInventoryData, initialUsers } from '../data/initialData';
 import { getPersianDateString, getPersianDateTimeString, formatToman } from '../utils/persian';
@@ -84,6 +85,7 @@ interface InventoryContextType {
   ) => Invoice;
   
   clearCheque: (chequeId: string) => void;
+  updateChequeStatus: (chequeId: string, status: 'pending' | 'cleared' | 'bounced' | 'returned') => void;
   
   cancelInvoiceAndReturnToStock: (invoiceId: string, reason?: string) => void;
   confirmOfficialExitInvoice: (
@@ -1615,12 +1617,139 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const totalChequesAmount = chequesList ? chequesList.reduce((s, c) => s + c.amount, 0) : 0;
 
-    if (totalChequesAmount > 0 && updatedPartnerInfo) {
-      // Find whose account originally issued the goods in this invoice so we deduct the cheque portion from their cash balance
+    // --- REVERT TEMPORARY CREDIT FROM processStockExitInvoice AND APPLY ACTUAL CASH PAYMENT ---
+    if (updatedPartnerInfo) {
       const p1Name = updatedPartnerInfo.partner1Name || 'شریک اول';
       const p2Name = updatedPartnerInfo.partner2Name || 'شریک دوم';
 
-      // Find the main purchaser (who originally got the cash deposit in processStockExitInvoice)
+      // 1. Calculate original credit based on line items' purchasers
+      const originalCredit = { partner1: 0, partner2: 0, shared: 0 };
+      inv.items.forEach((item) => {
+        const purchaserName = item.purchaser || 'حساب مشترک';
+        if (purchaserName === p1Name || purchaserName.includes('اول') || purchaserName.includes('مدیر ۱')) {
+          originalCredit.partner1 += item.totalPrice;
+        } else if (purchaserName === p2Name || purchaserName.includes('دوم') || purchaserName.includes('مدیر ۲')) {
+          originalCredit.partner2 += item.totalPrice;
+        } else {
+          originalCredit.shared += item.totalPrice;
+        }
+      });
+
+      // 2. Revert the original credit from the initial proforma creation
+      if (originalCredit.partner1 > 0 && updatedPartnerInfo.partner1Account) {
+        const prev = updatedPartnerInfo.partner1Account.initialCash || 0;
+        updatedPartnerInfo.partner1Account.initialCash = Math.max(0, prev - originalCredit.partner1);
+        newAdjustments.unshift({
+          id: `adj-rev-inv-p1-${Date.now()}`,
+          targetAccount: 'partner1',
+          accountName: p1Name,
+          assetType: 'cash',
+          operation: 'withdraw',
+          amount: originalCredit.partner1,
+          previousAmount: prev,
+          newAmount: updatedPartnerInfo.partner1Account.initialCash,
+          notes: `اصلاح و برگشت اعتبار کل سهم فروش پیش‌فاکتور ${inv.invoiceNumber} جهت ثبت توزیع واقعی نقدی و چک فاکتور رسمی`,
+          date: getPersianDateString(),
+          time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+        });
+      }
+      if (originalCredit.partner2 > 0 && updatedPartnerInfo.partner2Account) {
+        const prev = updatedPartnerInfo.partner2Account.initialCash || 0;
+        updatedPartnerInfo.partner2Account.initialCash = Math.max(0, prev - originalCredit.partner2);
+        newAdjustments.unshift({
+          id: `adj-rev-inv-p2-${Date.now()}`,
+          targetAccount: 'partner2',
+          accountName: p2Name,
+          assetType: 'cash',
+          operation: 'withdraw',
+          amount: originalCredit.partner2,
+          previousAmount: prev,
+          newAmount: updatedPartnerInfo.partner2Account.initialCash,
+          notes: `اصلاح و برگشت اعتبار کل سهم فروش پیش‌فاکتور ${inv.invoiceNumber} جهت ثبت توزیع واقعی نقدی و چک فاکتور رسمی`,
+          date: getPersianDateString(),
+          time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+        });
+      }
+      if (originalCredit.shared > 0 && updatedPartnerInfo.sharedAccount) {
+        const prev = updatedPartnerInfo.sharedAccount.initialCash || 0;
+        updatedPartnerInfo.sharedAccount.initialCash = Math.max(0, prev - originalCredit.shared);
+        newAdjustments.unshift({
+          id: `adj-rev-inv-sh-${Date.now()}`,
+          targetAccount: 'shared',
+          accountName: 'حساب مشترک',
+          assetType: 'cash',
+          operation: 'withdraw',
+          amount: originalCredit.shared,
+          previousAmount: prev,
+          newAmount: updatedPartnerInfo.sharedAccount.initialCash,
+          notes: `اصلاح و برگشت اعتبار کل سهم فروش پیش‌فاکتور ${inv.invoiceNumber} جهت ثبت توزیع واقعی نقدی و چک فاکتور رسمی`,
+          date: getPersianDateString(),
+          time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+          registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+        });
+      }
+
+      // 3. Apply the actual cash allocation received
+      if (allocation) {
+        if (allocation.partner1Amount > 0 && updatedPartnerInfo.partner1Account) {
+          const prev = updatedPartnerInfo.partner1Account.initialCash || 0;
+          updatedPartnerInfo.partner1Account.initialCash = prev + allocation.partner1Amount;
+          newAdjustments.unshift({
+            id: `adj-real-p1-${Date.now()}`,
+            targetAccount: 'partner1',
+            accountName: p1Name,
+            assetType: 'cash',
+            operation: 'deposit',
+            amount: allocation.partner1Amount,
+            previousAmount: prev,
+            newAmount: updatedPartnerInfo.partner1Account.initialCash,
+            notes: `واریز نقدی سهم واقعی فروش قطعی فاکتور رسمی ${officialNum}`,
+            date: getPersianDateString(),
+            time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+          });
+        }
+        if (allocation.partner2Amount > 0 && updatedPartnerInfo.partner2Account) {
+          const prev = updatedPartnerInfo.partner2Account.initialCash || 0;
+          updatedPartnerInfo.partner2Account.initialCash = prev + allocation.partner2Amount;
+          newAdjustments.unshift({
+            id: `adj-real-p2-${Date.now()}`,
+            targetAccount: 'partner2',
+            accountName: p2Name,
+            assetType: 'cash',
+            operation: 'deposit',
+            amount: allocation.partner2Amount,
+            previousAmount: prev,
+            newAmount: updatedPartnerInfo.partner2Account.initialCash,
+            notes: `واریز نقدی سهم واقعی فروش قطعی فاکتور رسمی ${officialNum}`,
+            date: getPersianDateString(),
+            time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+          });
+        }
+        if (allocation.sharedAmount > 0 && updatedPartnerInfo.sharedAccount) {
+          const prev = updatedPartnerInfo.sharedAccount.initialCash || 0;
+          updatedPartnerInfo.sharedAccount.initialCash = prev + allocation.sharedAmount;
+          newAdjustments.unshift({
+            id: `adj-real-sh-${Date.now()}`,
+            targetAccount: 'shared',
+            accountName: 'حساب مشترک',
+            assetType: 'cash',
+            operation: 'deposit',
+            amount: allocation.sharedAmount,
+            previousAmount: prev,
+            newAmount: updatedPartnerInfo.sharedAccount.initialCash,
+            notes: `واریز نقدی سهم واقعی فروش قطعی فاکتور رسمی ${officialNum}`,
+            date: getPersianDateString(),
+            time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
+            registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
+          });
+        }
+      }
+
+      // 4. Create Cheque records
       const firstItemPurchaser = inv.items[0]?.purchaser || 'حساب مشترک';
       let mainAccKey: 'partner1' | 'partner2' | 'shared' = 'shared';
       if (firstItemPurchaser === p1Name || firstItemPurchaser.includes('اول') || firstItemPurchaser.includes('مدیر ۱')) {
@@ -1629,39 +1758,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         mainAccKey = 'partner2';
       }
 
-      const accField =
-        mainAccKey === 'partner1'
-          ? 'partner1Account'
-          : mainAccKey === 'partner2'
-          ? 'partner2Account'
-          : 'sharedAccount';
-
-      const currentAcc = { ...(updatedPartnerInfo[accField] || { initialCash: 0, initialCopperKg: 0 }) };
-      const prevCash = currentAcc.initialCash || 0;
-      
-      // Deduct the cheque amount from cash balance because it is now a cheque, not cash!
-      const newCash = Math.max(0, prevCash - totalChequesAmount);
-      currentAcc.initialCash = newCash;
-      updatedPartnerInfo[accField] = currentAcc;
-
-      // Add deduction balance adjustment record
-      newAdjustments.unshift({
-        id: `adj-exit-chq-${Date.now()}`,
-        targetAccount: mainAccKey,
-        accountName: firstItemPurchaser,
-        assetType: 'cash',
-        operation: 'withdrawal',
-        amount: totalChequesAmount,
-        previousAmount: prevCash,
-        newAmount: newCash,
-        notes: `کاهش نقدی بابت تبدیل بخشی از مبلغ فروش فاکتور ${officialNum} به چک سررسید‌دار به مبلغ کل ${formatToman(totalChequesAmount)}`,
-        date: getPersianDateString(),
-        time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
-        registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
-      });
-
-      // Create cheque records
-      chequesList?.forEach((ch, idx) => {
+      chequesList?.forEach((ch: any, idx) => {
         newChequeRecords.push({
           id: `chq-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
           amount: ch.amount,
@@ -1669,9 +1766,10 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           dueDate: ch.dueDate,
           bankName: ch.bankName,
           isCleared: false,
-          partnerAccount: mainAccKey,
+          status: 'pending',
+          partnerAccount: ch.partnerAccount || mainAccKey, // Associate individually with the selected partner or fall back to main purchaser
           invoiceNumber: officialNum,
-          customerName: inv.customerName || 'مشتری متفرقه',
+          customerName: ch.customerName || inv.customerName || 'مشتری متفرقه',
         });
       });
     }
@@ -2258,18 +2356,21 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  const clearCheque = (chequeId: string) => {
+  const updateChequeStatus = (chequeId: string, newStatus: 'pending' | 'cleared' | 'bounced' | 'returned') => {
     const targetCheque = (state.cheques || []).find((ch) => ch.id === chequeId);
     if (!targetCheque) return;
 
-    if (targetCheque.isCleared) {
-      showToast('این چک قبلاً پاس شده است.', 'info');
-      return;
-    }
+    const oldStatus = targetCheque.status || (targetCheque.isCleared ? 'cleared' : 'pending');
+    if (oldStatus === newStatus) return;
 
     const updatedCheques = (state.cheques || []).map((ch) => {
       if (ch.id === chequeId) {
-        return { ...ch, isCleared: true, clearedAt: getPersianDateString() };
+        return {
+          ...ch,
+          status: newStatus,
+          isCleared: newStatus === 'cleared',
+          clearedAt: newStatus === 'cleared' ? getPersianDateString() : undefined,
+        };
       }
       return ch;
     });
@@ -2290,21 +2391,41 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const currentAcc = { ...(updatedPartnerInfo[accField] || { initialCash: 0, initialCopperKg: 0 }) };
       const prevCash = currentAcc.initialCash || 0;
-      const newCash = prevCash + targetCheque.amount;
+      let newCash = prevCash;
+
+      // Transition logic
+      if (oldStatus === 'cleared' && newStatus !== 'cleared') {
+        // Subtract because it was cleared but now is bounced/returned
+        newCash = Math.max(0, prevCash - targetCheque.amount);
+      } else if (oldStatus !== 'cleared' && newStatus === 'cleared') {
+        // Add because it is now cleared
+        newCash = prevCash + targetCheque.amount;
+      }
+
       currentAcc.initialCash = newCash;
       updatedPartnerInfo[accField] = currentAcc;
 
-      // Register adjustment
+      let notes = '';
+      if (newStatus === 'cleared') {
+        notes = `وصول و پاس شدن چک شماره ${targetCheque.chequeNumber} بانک ${targetCheque.bankName} مربوط به فاکتور ${targetCheque.invoiceNumber} به مبلغ ${formatToman(targetCheque.amount)}`;
+      } else if (newStatus === 'bounced') {
+        notes = `برگشت خوردن چک شماره ${targetCheque.chequeNumber} بانک ${targetCheque.bankName} مربوط به فاکتور ${targetCheque.invoiceNumber} به مبلغ ${formatToman(targetCheque.amount)}`;
+      } else if (newStatus === 'returned') {
+        notes = `عودت و برگشت فیزیکی چک شماره ${targetCheque.chequeNumber} بانک ${targetCheque.bankName} به مشتری مربوط به فاکتور ${targetCheque.invoiceNumber} به مبلغ ${formatToman(targetCheque.amount)}`;
+      } else {
+        notes = `تغییر وضعیت چک شماره ${targetCheque.chequeNumber} مربوط به فاکتور ${targetCheque.invoiceNumber} به جریان وصول مجدد`;
+      }
+
       newAdjustments.unshift({
-        id: `adj-chq-clr-${Date.now()}`,
+        id: `adj-chq-st-${Date.now()}`,
         targetAccount: targetCheque.partnerAccount,
         accountName: targetCheque.partnerAccount === 'partner1' ? updatedPartnerInfo.partner1Name : targetCheque.partnerAccount === 'partner2' ? updatedPartnerInfo.partner2Name : 'حساب مشترک',
         assetType: 'cash',
-        operation: 'deposit',
+        operation: (newStatus === 'cleared') ? 'deposit' : (oldStatus === 'cleared') ? 'withdraw' : 'set_direct',
         amount: targetCheque.amount,
         previousAmount: prevCash,
         newAmount: newCash,
-        notes: `وصول و پاس شدن چک شماره ${targetCheque.chequeNumber} بانک ${targetCheque.bankName} مربوط به فاکتور ${targetCheque.invoiceNumber} به مبلغ ${formatToman(targetCheque.amount)}`,
+        notes,
         date: getPersianDateString(),
         time: new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }),
         registeredBy: currentUser ? currentUser.fullName : 'مدیر سیستم',
@@ -2321,14 +2442,29 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     updatePresentState(newState);
-    showToast(`چک شماره ${targetCheque.chequeNumber} به مبلغ ${formatToman(targetCheque.amount)} با موفقیت پاس گردید و به موجودی نقدی اضافه شد.`, 'success');
+
+    let successMsg = '';
+    if (newStatus === 'cleared') {
+      successMsg = `چک شماره ${targetCheque.chequeNumber} با موفقیت پاس گردید و به موجودی نقدی اضافه شد.`;
+    } else if (newStatus === 'bounced') {
+      successMsg = `وضعیت چک شماره ${targetCheque.chequeNumber} به «برگشت خورده» تغییر یافت.`;
+    } else if (newStatus === 'returned') {
+      successMsg = `وضعیت چک شماره ${targetCheque.chequeNumber} به «عودت داده شده» تغییر یافت.`;
+    } else {
+      successMsg = `وضعیت چک شماره ${targetCheque.chequeNumber} به «در جریان وصول» تغییر یافت.`;
+    }
+    showToast(successMsg, 'success');
 
     const config = getSupabaseConfig();
     if (config.isConfigured) {
       saveRemoteInventory(newState).catch((err) => {
-        console.warn('Error syncing cleared cheque to Supabase:', err);
+        console.warn('Error syncing cheque status update to Supabase:', err);
       });
     }
+  };
+
+  const clearCheque = (chequeId: string) => {
+    updateChequeStatus(chequeId, 'cleared');
   };
 
   const updateWarehouseProfile = (profile: WarehouseProfile) => {
@@ -2735,6 +2871,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         addStockEntry,
         processStockExitInvoice,
         clearCheque,
+        updateChequeStatus,
         cancelInvoiceAndReturnToStock,
         confirmOfficialExitInvoice,
         transferToConsignment,
